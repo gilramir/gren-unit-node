@@ -284,3 +284,46 @@ All tests in a suite always run — there is no bail-out on first failure.
 ```bash
 node app --junit-xml results.xml   # also write JUnit XML (useful in CI)
 ```
+
+## Design notes
+
+`blaix/gren-effectful-tests` is the established Gren testing library and the right
+choice for most projects. It has a clean API: each test is an effectful task that
+produces an `Expectation`, and the runner collects and reports them all. If your
+tests don't need per-test lifecycle hooks or structured machine-readable output,
+it is likely the better fit.
+
+gren-unit-node exists because a specific aspect of that execution model made
+certain test patterns hard to express. Effectful-tests runs all of the test tasks
+and collects the resulting `Expectation` values, then evaluates them together. For
+independent tests this works well. Where it becomes awkward is when the
+**ordering and timing** of individual steps matters:
+
+- **Per-test setUp and tearDown.** There is no structural hook that runs between
+  one test finishing and the next one starting. A tearDown that must release the
+  resource its test acquired — and do so before the next setUp runs — has no
+  natural home in a collect-then-evaluate model.
+
+- **Setup failures as first-class outcomes.** When setUp fails, the right
+  behavior is to mark that test as Errored, skip its body entirely, and still
+  run tearDown for any fixtures that did get created. Expressing this as a
+  composed `Task` requires owning the loop.
+
+- **Per-test timing.** Knowing how long each individual test took requires
+  observing when each one starts and finishes, which is difficult to recover
+  after a batch run.
+
+- **Machine-readable output.** JUnit XML and similar formats need per-test
+  outcomes with lifecycle data attached — the same information that per-test
+  timing requires.
+
+gren-unit-node addresses these by owning a sequential loop over `Task`. Each test
+runs completely — setUp → body → tearDown — as a single composed `Task` before
+the next test begins. A failing setUp becomes a `Task` error the runner catches
+and records as an Errored outcome; tearDown is chained in a way that is
+structurally guaranteed to run even when the body fails.
+
+The assertion API is the same: gren-unit-node reuses `gren-lang/test`'s
+`Expect.*` matchers throughout, pulling structured failure information out of an
+`Expectation` via `Test.Runner.getFailureReason`. You do not need to learn a new
+assertion library to use it.
