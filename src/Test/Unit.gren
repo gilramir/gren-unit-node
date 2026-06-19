@@ -2,7 +2,7 @@ module Test.Unit exposing
     ( Suite, Test, Outcome
     , suite, test
     , noSuiteFixture, noFixture, noTearDown
-    , Permissions, run, runWith
+    , run, runWith
     )
 
 {-| An xUnit / Python-`unittest`-style test framework for Gren.
@@ -20,7 +20,7 @@ what buys the four things `unittest` users expect:
 @docs Suite, Test, Outcome
 @docs suite, test
 @docs noSuiteFixture, noFixture, noTearDown
-@docs Permissions, run
+@docs run, runWith
 
 
 ## Writing a suite
@@ -63,8 +63,6 @@ than an arbitrary type) is what lets the runner print them verbatim instead of
 mangling them through `Debug.toString`.
 -}
 
-import ChildProcess
-import FileSystem
 import Init
 import Node
 import Task exposing (Task)
@@ -96,12 +94,6 @@ for reporters/consumers; you rarely match on it directly.
 -}
 type alias Outcome =
     I.Outcome
-
-
-{-| The permissions the framework acquires and hands to your suite builder.
--}
-type alias Permissions =
-    P.Permissions
 
 
 {-| Define a single test: a name and a body that, given the suite's test
@@ -179,28 +171,22 @@ noTearDown _ =
     Task.succeed {}
 
 
-{-| Build the whole test executable. Drop this in `main`:
+{-| Build a test executable with no permissions. Use this when your tests are
+purely computational. For tests that need filesystem, network, or process
+access, use [runWith](#runWith).
 
     main : Node.SimpleProgram a
     main =
         Test.Unit.run
             { name = "my-tests"
             , version = "1.0.0"
-            , suites =
-                \perms ->
-                    [ arithmetic
-                    , tempDirSuite perms
-                    ]
+            , suites = [ arithmetic, stringTests ]
             }
-
-`suites` receives the framework-acquired [Permissions](#Permissions) so your
-fixtures can touch the filesystem and spawn child processes without any `Init`
-boilerplate of your own.
 -}
 run :
     { name : String
     , version : String
-    , suites : Permissions -> Array Suite
+    , suites : Array Suite
     }
     -> Node.SimpleProgram a
 run =

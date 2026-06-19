@@ -1,4 +1,4 @@
-module Test.Unit.Program exposing ( Permissions, run, runWith )
+module Test.Unit.Program exposing ( run, runWith )
 
 {-| The CLI entry point. `run` and `runWith` build a complete `Node.SimpleProgram`
 on top of `gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
@@ -26,7 +26,6 @@ import Argparse.Parser as AP
 import Argparse.PrettyPrinter as PP
 import Argparse.Program as Program
 import Bytes exposing (Bytes)
-import ChildProcess
 import Dict
 import FileSystem
 import FileSystem.Path as Path exposing (Path)
@@ -39,14 +38,6 @@ import Test.Unit.Internal as I exposing (Suite(..), SuiteResult, Selection)
 import Test.Unit.JUnit as JUnit
 import Test.Unit.Glob as Glob
 import Test.Unit.Report as Report
-
-
-{-| The permissions `run` acquires and passes to your suite builder.
--}
-type alias Permissions =
-    { fs : FileSystem.Permission
-    , childProcess : ChildProcess.Permission
-    }
 
 
 type alias Flags =
@@ -64,26 +55,22 @@ type alias Context perms =
     }
 
 
-{-| Run the test suite, acquiring `FileSystem` and `ChildProcess` permissions
-and passing them to your suite builder. This is the right choice for most test
-suites that shell out and read/write files.
+{-| Run the test suite with no permissions. Use this when your tests are
+purely computational and need no filesystem, network, or process access.
+For tests that need resources, use [runWith](#runWith).
 -}
 run :
     { name : String
     , version : String
-    , suites : Permissions -> Array Suite
+    , suites : Array Suite
     }
     -> Node.SimpleProgram a
 run userConfig =
     runWith
         { name = userConfig.name
         , version = userConfig.version
-        , init =
-            \done ->
-                Init.await FileSystem.initialize <| \fs ->
-                Init.await ChildProcess.initialize <| \cp ->
-                    done { fs = fs, childProcess = cp }
-        , suites = userConfig.suites
+        , init = \done -> done {}
+        , suites = \_ -> userConfig.suites
         }
 
 

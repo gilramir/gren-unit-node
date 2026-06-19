@@ -44,7 +44,7 @@ main =
     U.run
         { name = "my-tests"
         , version = "1.0.0"
-        , suites = \_ -> [ mathSuite ]
+        , suites = [ mathSuite ]
         }
 
 
@@ -66,6 +66,8 @@ mathSuite =
 ```
 
 Each test body is a function from the test fixture (ignored here with `_`) to a `Task String Expectation`. Use the standard `Expect.*` functions from `gren-lang/test` for assertions — the same ones you already know.
+
+`U.run` requires no permissions. For tests that read files, spawn processes, or touch other external resources, use `U.runWith` — see below.
 
 ## Build and run
 
@@ -112,19 +114,46 @@ node app --list          # print all qualified names, don't run
 
 ## Tests that need resources
 
-When tests need files, processes, or other external state, use `setUp` and `tearDown`. They run before and after each test, and **`tearDown` is guaranteed to run even if the test fails**, so resources are always cleaned up.
+When tests need files, processes, or other external state, use `U.runWith` to acquire permissions, then use `setUp` and `tearDown` to manage per-test resources. **`tearDown` is guaranteed to run even if the test fails**, so resources are always cleaned up.
 
-`U.run` acquires `fs` (filesystem) and `childProcess` permissions and passes them to your suite builder as `U.Permissions` — no `Init` wiring needed. If you need a different set of permissions, see [Custom permissions](#custom-permissions) below.
+### Acquiring permissions
 
-Here is a suite where each test gets a fresh temporary directory:
+`U.runWith` takes an `init` field that follows Gren's `Init.await` continuation style: call `done` with whatever permissions your tests need. The most common case is filesystem access:
 
 ```gren
 import FileSystem
 import FileSystem.Path as Path exposing (Path)
+import Init
+import Node
 import Task
+import Test.Unit as U
 
 
-tempDirSuite : U.Permissions -> U.Suite
+type alias Perms =
+    { fs : FileSystem.Permission }
+
+
+main : Node.SimpleProgram a
+main =
+    U.runWith
+        { name = "my-tests"
+        , version = "1.0.0"
+        , init =
+            \done ->
+                Init.await FileSystem.initialize <| \fs ->
+                    done { fs = fs }
+        , suites = \perms -> [ tempDirSuite perms ]
+        }
+```
+
+Your `suites` function receives whatever record you passed to `done`.
+
+### Per-test setup and teardown
+
+Here each test gets a fresh temporary directory, created in `setUp` and removed in `tearDown`:
+
+```gren
+tempDirSuite : Perms -> U.Suite
 tempDirSuite perms =
     U.suite
         { name = "TempDir"
@@ -152,21 +181,14 @@ tempDirSuite perms =
         }
 ```
 
-Pass `tempDirSuite perms` alongside your other suites in `main`:
-
-```gren
-suites = \perms -> [ mathSuite, tempDirSuite perms ]
-```
-
 ### Suite-level setup
 
-`setUpSuite` and `tearDownSuite` run once for the whole suite — useful for expensive one-time work like locating a binary or opening a connection. The value `setUpSuite` produces is passed to every `setUp` call as its first argument.
+`setUpSuite` and `tearDownSuite` run once for the whole suite — useful for expensive one-time work like locating a binary. The value `setUpSuite` produces is passed to every `setUp` call as its first argument:
 
 ```gren
 U.suite
     { name = "CLI"
     , setUpSuite =
-        -- locate the binary once; each test receives its path
         FileSystem.realPath perms.fs (Path.fromPosixString "../app")
             |> Task.map Path.toPosixString
             |> Task.mapError (\e -> "could not find app: " ++ Debug.toString e)
@@ -177,49 +199,23 @@ U.suite
     }
 ```
 
-### Error channel
+### Multiple permissions
 
-Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
-
-## Custom permissions
-
-`U.run` always gives you `fs + childProcess`. If your tests need something different — an HTTP client, a database connection, or nothing at all — use `U.runWith` and supply your own initialization step.
-
-The `init` field follows Gren's `Init.await` continuation style: you receive a `done` callback, initialize whatever you need, then call `done` with your permissions record:
-
-```gren
-main : Node.SimpleProgram a
-main =
-    U.runWith
-        { name = "my-tests"
-        , version = "1.0.0"
-        , init =
-            \done ->
-                Init.await HttpClient.initialize <| \http ->
-                    done { http = http }
-        , suites = \perms -> [ httpSuite perms ]
-        }
-```
-
-Your `suites` function receives whatever you passed to `done` — here `{ http : HttpClient.Permission }`.
-
-For no permissions at all:
-
-```gren
-init = \done -> done {}
-```
-
-You can also combine multiple initializations:
+Chain `Init.await` calls to acquire more than one permission:
 
 ```gren
 init =
     \done ->
         Init.await FileSystem.initialize <| \fs ->
-        Init.await HttpClient.initialize <| \http ->
-            done { fs = fs, http = http }
+        Init.await ChildProcess.initialize <| \cp ->
+            done { fs = fs, childProcess = cp }
 ```
 
-Note: `U.runWith` always acquires its own `FileSystem.Permission` internally for `--junit-xml` support, regardless of what you pass to `done`. If your tests also need filesystem access, acquire it separately in your `init` as shown above.
+### Error channel
+
+Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
+
+Note: `U.runWith` always acquires its own `FileSystem.Permission` internally for `--junit-xml` support. If your tests also need filesystem access, acquire it separately in your `init`.
 
 ## Comparing output against a file
 
@@ -234,7 +230,7 @@ import Expect
 import Test.Unit as U
 
 
-goldenSuite : U.Permissions -> U.Suite
+goldenSuite : Perms -> U.Suite
 goldenSuite perms =
     U.suite
         { name = "Golden"
