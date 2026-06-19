@@ -79,7 +79,7 @@ node app
 ```
 
 ```
-Math                                     ok    (12 ms)
+Math                                     ok    2/2    (12 ms)
 
 
 Ran 2 tests in 12 ms

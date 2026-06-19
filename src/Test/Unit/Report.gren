@@ -100,12 +100,22 @@ suiteLine useColor sr =
             else
                 { tag = "ok", col = green }
 
+        total =
+            Array.length sr.results
+
+        passed =
+            sr.results |> Array.foldl (\r acc -> if isFailed r.outcome || isErrored r.outcome then acc else acc + 1) 0
+
         durationMs =
             Array.foldl (\r acc -> acc + r.durationMs) 0 sr.results
+
+        counts =
+            String.fromInt passed ++ "/" ++ String.fromInt total
     in
     String.padRight 52 ' ' sr.name
         ++ " "
         ++ color useColor col (String.padRight 6 ' ' tag)
+        ++ String.padRight 7 ' ' counts
         ++ "("
         ++ String.fromInt durationMs
         ++ " ms)"
