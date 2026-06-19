@@ -1,0 +1,240 @@
+module Test.Unit.Program exposing ( Permissions, run )
+
+{-| The CLI entry point. `run` builds a complete `Node.SimpleProgram` on top of
+`gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
+
+CLI surface:
+
+    my-tests                       # run everything
+    my-tests 'Format.*'            # run only tests whose qualified name globs
+    my-tests '*in place*' 'Glob.*' # multiple patterns: union
+    my-tests -v                    # verbose: per-test status + timing
+    my-tests --list                # print every test's qualified name and exit
+    my-tests --junit-xml out.xml   # also write JUnit results to out.xml
+
+Exit code is `0` only if every selected test passed (argparse's `Succeeded`);
+any failure/error yields `Failed` → exit `1`, after the report is printed. A
+bad flag or a `--junit-xml` write failure fails the task → exit `1` with a
+diagnostic on stderr, exactly the Unix split `Argparse.Program` already bakes in.
+
+The framework owns initialization of the **common** Node permissions
+(filesystem + child process) and hands them to the user's suite-builder via
+`Permissions`. That covers the headline use case — black-box CLI tests that
+shell out and poke temp files — without the user touching `Init`.
+-}
+
+import Argparse.Parser as AP
+import Argparse.PrettyPrinter as PP
+import Argparse.Program as Program
+import Bytes exposing (Bytes)
+import ChildProcess
+import Dict
+import FileSystem
+import FileSystem.Path as Path exposing (Path)
+import Init
+import Node
+import Stream.Log
+import Task exposing (Task)
+import Terminal
+import Test.Unit.Internal as I exposing (Suite(..), SuiteResult, Selection)
+import Test.Unit.JUnit as JUnit
+import Test.Unit.Glob as Glob
+import Test.Unit.Report as Report
+
+
+{-| The permissions the framework acquires for you and passes to your suites.
+Your `setUp`/`body`/`tearDown` tasks close over these.
+-}
+type alias Permissions =
+    { fs : FileSystem.Permission
+    , childProcess : ChildProcess.Permission
+    }
+
+
+type alias Flags =
+    { patterns : Array String
+    , verbose : Bool
+    , list : Bool
+    , junitXml : Maybe Path
+    }
+
+
+type alias Context =
+    { perms : Permissions
+    , useColor : Bool
+    }
+
+
+run :
+    { name : String
+    , version : String
+    , suites : Permissions -> Array Suite
+    }
+    -> Node.SimpleProgram a
+run userConfig =
+    Program.runRootWithContext
+        { name = userConfig.name
+        , version = userConfig.version
+        , command = command
+        , init =
+            \_env toProgram ->
+                Init.await FileSystem.initialize <| \fs ->
+                Init.await ChildProcess.initialize <| \cp ->
+                Init.await Terminal.initialize <| \termConfig ->
+                Init.awaitTask Node.getEnvironmentVariables <| \envVars ->
+                    toProgram
+                        { perms = { fs = fs, childProcess = cp }
+                        , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
+                        }
+        , onCommand = onCommand userConfig.suites
+        }
+
+
+command : AP.Command (Array String) Flags Flags
+command =
+    { word = ""
+    , arguments =
+        AP.zeroOrMoreArgs
+            { value = stringParser
+            , help = "Glob pattern(s) selecting tests by qualified name (Suite.test). Omit to run all."
+            }
+    , flags =
+        AP.initFlags
+            (\verbose list junitXml ->
+                { patterns = [], verbose = verbose, list = list, junitXml = junitXml }
+            )
+            |> AP.toggle (AP.Both { long = "verbose", short = "v" }) "Show per-test status and execution time"
+            |> AP.toggle (AP.Both { long = "list", short = "l" }) "List every test's qualified name and exit"
+            |> AP.flag (AP.LongOnly "junit-xml") AP.pathParser "Write JUnit XML results to the given path"
+    , commonDescription = Nothing
+    , summary = "Run the test suite."
+    , example = PP.empty
+    , builder = \args flags -> { flags | patterns = args }
+    }
+
+
+{-| A pass-through string value parser. `Argparse.Parser` only ships
+`pathParser`/`grenFileParser`, but a `ValueParser` is just a record, so a
+glob-pattern string parser is a one-liner.
+-}
+stringParser : AP.ValueParser String
+stringParser =
+    { label = "pattern"
+    , fn = Just
+    , examples = [ "Format.*", "*in place*" ]
+    }
+
+
+onCommand : (Permissions -> Array Suite) -> Node.Environment -> Context -> Flags -> Task String Program.Outcome
+onCommand buildSuites env ctx flags =
+    let
+        suites =
+            buildSuites ctx.perms
+
+        selection =
+            selectionFrom flags.patterns
+    in
+    if flags.list then
+        listTests env suites
+            |> Task.map (\_ -> Program.Succeeded)
+
+    else
+        runAll suites selection
+            -- widen the runner's `Never` error channel to `String` so it chains
+            -- with reportAndWrite, which can fail (a JUnit write error).
+            |> Task.onError never
+            |> Task.andThen
+                (\suiteResults ->
+                    reportAndWrite env ctx flags suiteResults
+                        |> Task.map (\_ -> outcomeFor suiteResults)
+                )
+
+
+{-| With no patterns, everything is selected. With patterns, a test runs if any
+pattern globs its qualified name.
+-}
+selectionFrom : Array String -> Selection
+selectionFrom patterns =
+    { isSelected =
+        \fullName ->
+            if Array.isEmpty patterns then
+                True
+
+            else
+                Array.any (\p -> Glob.matches p fullName) patterns
+    }
+
+
+runAll : Array Suite -> Selection -> Task Never (Array SuiteResult)
+runAll suites selection =
+    -- Each suite's `run` is `Task Never SuiteResult`; sequence them serially.
+    Array.foldl
+        (\(Suite s) acc ->
+            acc
+                |> Task.andThen
+                    (\soFar ->
+                        s.run selection
+                            |> Task.map (\r -> Array.pushLast r soFar)
+                    )
+        )
+        (Task.succeed [])
+        suites
+
+
+reportAndWrite : Node.Environment -> Context -> Flags -> Array SuiteResult -> Task String {}
+reportAndWrite env ctx flags suiteResults =
+    let
+        style =
+            if flags.verbose then
+                Report.Verbose
+
+            else
+                Report.Plain
+
+        reportText =
+            Report.render { style = style, useColor = ctx.useColor } suiteResults
+    in
+    Stream.Log.line env.stdout reportText
+        |> Task.andThen
+            (\_ ->
+                when flags.junitXml is
+                    Just path ->
+                        FileSystem.writeFile ctx.perms.fs (bytesOf (JUnit.toXmlString suiteResults)) path
+                            |> Task.map (\_ -> {})
+                            |> Task.mapError (\e -> "could not write JUnit XML: " ++ Debug.toString e)
+
+                    Nothing ->
+                        Task.succeed {}
+            )
+
+
+listTests : Node.Environment -> Array Suite -> Task x {}
+listTests env suites =
+    suites
+        |> Array.foldl (\(Suite s) acc -> acc ++ s.testNames) []
+        |> String.join "\n"
+        |> Stream.Log.line env.stdout
+
+
+outcomeFor : Array SuiteResult -> Program.Outcome
+outcomeFor suiteResults =
+    let
+        anyBad =
+            Array.any
+                (\sr ->
+                    sr.suiteError /= Nothing
+                        || Array.any (\r -> I.outcomeIsBad r.outcome) sr.results
+                )
+                suiteResults
+    in
+    if anyBad then
+        Program.Failed
+
+    else
+        Program.Succeeded
+
+
+bytesOf : String -> Bytes
+bytesOf s =
+    -- placeholder for the String→Bytes conversion (Bytes.fromString)
+    Bytes.fromString s

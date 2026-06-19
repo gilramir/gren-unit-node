@@ -1,0 +1,6 @@
+module Hello exposing (x)
+
+
+x : Int
+x =
+    1

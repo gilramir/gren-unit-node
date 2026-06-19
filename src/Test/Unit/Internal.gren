@@ -1,0 +1,104 @@
+module Test.Unit.Internal exposing
+    ( Suite(..)
+    , Selection
+    , Outcome(..)
+    , TestResult
+    , SuiteResult
+    , outcomeIsBad
+    )
+
+{-| Shared, package-internal data types.
+
+This module exists purely to break an import cycle: `Test.Unit` (the public
+facade, where `suite`/`test` live) and `Test.Unit.Runner` (the execution loop)
+both need the *erased* `Suite` representation, so it can't live in either of
+them. Nothing here is re-exposed from the package except, opaquely, `Suite` and
+`Outcome` (re-exported by `Test.Unit`).
+
+The central trick is the `Suite` constructor: a `suite { … }` call is generic
+over a suite-fixture type and a test-fixture type, but the moment it's built we
+**erase** both type variables by closing over them inside `run`, leaving a
+monomorphic `Selection -> Task Never SuiteResult`. That is what lets an
+`Array Suite` hold groups whose fixtures have completely different types —
+Gren has neither existentials nor type classes, so this closure erasure is the
+only way to get heterogeneous fixtures into one list.
+-}
+
+import Task exposing (Task)
+
+
+{-| A test group, with its fixture types erased.
+
+* `name` — the group name, used as the JUnit `classname` and the prefix of
+  every fully-qualified test name (`"GroupName.test name"`).
+* `testNames` — every test's fully-qualified name, known *without running
+  anything* so the CLI can list/select before any expensive `setUpSuite` runs.
+* `run` — runs the (pre-filtered) group end to end and yields its results.
+  It never fails: every error, including a thrown `setUpSuite`, is folded into
+  an `Outcome` inside `SuiteResult`.
+-}
+type Suite
+    = Suite
+        { name : String
+        , testNames : Array String
+        , run : Selection -> Task Never SuiteResult
+        }
+
+
+{-| Which fully-qualified test names should run. Built once from the CLI
+patterns and threaded into every group's `run`. With no patterns, `isSelected`
+is constantly `True` (run everything).
+-}
+type alias Selection =
+    { isSelected : String -> Bool
+    }
+
+
+{-| The result of a single test, mirroring unittest's pass / fail / error split.
+
+* `Passed` — the body's `Expectation` passed.
+* `Failed` — the body's `Expectation` failed (an assertion). Carries the
+  rendered failure message.
+* `Errored` — something *threw*: a `setUp`/`tearDown` task failed, the body's
+  task failed in its error channel, or `tearDown` failed after an otherwise
+  passing test. Carries the diagnostic.
+
+There is deliberately no `Skipped` here for *deselected* tests — those never
+produce a result at all. (An explicit `Test.Unit.skip` could add one later.)
+-}
+type Outcome
+    = Passed
+    | Failed String
+    | Errored String
+
+
+type alias TestResult =
+    { suiteName : String
+    , name : String
+    , outcome : Outcome
+    , durationMs : Int
+    }
+
+
+{-| `suiteError` captures group-level lifecycle failures that aren't tied to one
+test: a `setUpSuite` that threw (in which case every test is also `Errored`), or
+a `tearDownSuite` that threw after the tests ran.
+-}
+type alias SuiteResult =
+    { name : String
+    , results : Array TestResult
+    , suiteError : Maybe String
+    }
+
+
+outcomeIsBad : Outcome -> Bool
+outcomeIsBad outcome =
+    when outcome is
+        Passed ->
+            False
+
+        Failed _ ->
+            True
+
+        Errored _ ->
+            True

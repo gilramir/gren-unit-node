@@ -1,0 +1,228 @@
+module Test.Unit.Report exposing ( Style(..), render )
+
+{-| Turn the collected `SuiteResult`s into the console report string.
+
+Two styles, mirroring `python -m unittest` and `… -v`:
+
+* `Plain` — one status char per test (`.` pass, `F` fail, `E` error) then a
+  summary block.
+* `Verbose` — one line per test with its fully-qualified name, status, and
+  wall-clock duration, then the same summary.
+
+Color is applied with raw ANSI when `useColor` is set (green pass / red fail /
+yellow error), matching how the rest of this workspace gates color on an
+interactive terminal + absence of `NO_COLOR`.
+
+This builds a single `String`. Live, test-by-test streaming would mean
+interleaving `Stream.Log.line` calls inside the runner loop instead; the data
+model already supports it, it's purely a presentation choice deferred for v1.
+-}
+
+import Test.Unit.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
+
+
+type Style
+    = Plain
+    | Verbose
+
+
+render : { style : Style, useColor : Bool } -> Array SuiteResult -> String
+render opts suiteResults =
+    let
+        allResults =
+            suiteResults
+                |> Array.foldl (\sr acc -> acc ++ sr.results) []
+
+        suiteErrors =
+            suiteResults
+                |> Array.foldl
+                    (\sr acc ->
+                        when sr.suiteError is
+                            Just e ->
+                                Array.pushLast (sr.name ++ ": " ++ e) acc
+
+                            Nothing ->
+                                acc
+                    )
+                    []
+
+        body =
+            when opts.style is
+                Plain ->
+                    allResults
+                        |> Array.map (statusChar opts.useColor)
+                        |> String.join ""
+
+                Verbose ->
+                    allResults
+                        |> Array.map (verboseLine opts.useColor)
+                        |> String.join "\n"
+
+        failures =
+            allResults |> Array.keepIf (\r -> isFailed r.outcome)
+
+        errors =
+            allResults |> Array.keepIf (\r -> isErrored r.outcome)
+
+        totalMs =
+            allResults |> Array.foldl (\r acc -> acc + r.durationMs) 0
+    in
+    String.join "\n"
+        [ body
+        , ""
+        , detailBlock "FAIL" failures
+        , detailBlock "ERROR" errors
+        , suiteErrorBlock suiteErrors
+        , summaryLine
+            { total = Array.length allResults
+            , failures = Array.length failures
+            , errors = Array.length errors + Array.length suiteErrors
+            , totalMs = totalMs
+            , useColor = opts.useColor
+            }
+        ]
+
+
+statusChar : Bool -> TestResult -> String
+statusChar useColor r =
+    when r.outcome is
+        Passed ->
+            color useColor green "."
+
+        Failed _ ->
+            color useColor red "F"
+
+        Errored _ ->
+            color useColor yellow "E"
+
+
+verboseLine : Bool -> TestResult -> String
+verboseLine useColor r =
+    let
+        name =
+            r.suiteName ++ "." ++ r.name
+
+        { tag, col } =
+            when r.outcome is
+                Passed ->
+                    { tag = "ok", col = green }
+
+                Failed _ ->
+                    { tag = "FAIL", col = red }
+
+                Errored _ ->
+                    { tag = "ERROR", col = yellow }
+    in
+    String.padRight 52 ' ' name
+        ++ " "
+        ++ color useColor col (String.padRight 6 ' ' tag)
+        ++ "("
+        ++ String.fromInt r.durationMs
+        ++ " ms)"
+
+
+detailBlock : String -> Array TestResult -> String
+detailBlock label results =
+    if Array.isEmpty results then
+        ""
+
+    else
+        results
+            |> Array.map
+                (\r ->
+                    "=== " ++ label ++ ": " ++ r.suiteName ++ "." ++ r.name ++ " ===\n" ++ messageOf r.outcome
+                )
+            |> String.join "\n\n"
+
+
+suiteErrorBlock : Array String -> String
+suiteErrorBlock errs =
+    if Array.isEmpty errs then
+        ""
+
+    else
+        "=== SUITE ERRORS ===\n" ++ String.join "\n" errs
+
+
+summaryLine :
+    { total : Int, failures : Int, errors : Int, totalMs : Int, useColor : Bool }
+    -> String
+summaryLine s =
+    let
+        ran =
+            "Ran " ++ String.fromInt s.total ++ " tests in " ++ String.fromInt s.totalMs ++ " ms"
+    in
+    if s.failures == 0 && s.errors == 0 then
+        ran ++ "\n\n" ++ color s.useColor green "OK"
+
+    else
+        ran
+            ++ "\n\n"
+            ++ color s.useColor red
+                ("FAILED (failures="
+                    ++ String.fromInt s.failures
+                    ++ ", errors="
+                    ++ String.fromInt s.errors
+                    ++ ")"
+                )
+
+
+messageOf : Outcome -> String
+messageOf outcome =
+    when outcome is
+        Passed ->
+            ""
+
+        Failed m ->
+            m
+
+        Errored m ->
+            m
+
+
+isFailed : Outcome -> Bool
+isFailed outcome =
+    when outcome is
+        Failed _ ->
+            True
+
+        _ ->
+            False
+
+
+isErrored : Outcome -> Bool
+isErrored outcome =
+    when outcome is
+        Errored _ ->
+            True
+
+        _ ->
+            False
+
+
+
+-- ANSI
+
+
+color : Bool -> String -> String -> String
+color useColor code text =
+    if useColor then
+        code ++ text ++ "\u{001B}[0m"
+
+    else
+        text
+
+
+green : String
+green =
+    "\u{001B}[32m"
+
+
+red : String
+red =
+    "\u{001B}[31m"
+
+
+yellow : String
+yellow =
+    "\u{001B}[33m"

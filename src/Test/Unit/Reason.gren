@@ -1,0 +1,49 @@
+module Test.Unit.Reason exposing ( render )
+
+{-| Render a failed `Expectation` into a readable one-or-few-line message.
+
+We reuse `gren-lang/test`'s whole assertion library (`Expect.equal`,
+`Expect.all`, …) by pulling the structured `Reason` out of a failed
+`Expectation` via `Test.Runner.getFailureReason`, then formatting it ourselves.
+That's the deal that saves us from reimplementing matchers: the cost is this
+one `when` over the `Reason` union.
+
+Only the common constructors are spelled out below; the rest fall through to a
+generic `description`-plus-`Debug.toString` line. Filling them in is purely
+cosmetic and can be done incrementally.
+-}
+
+import Test.Runner.Failure as Failure exposing (Reason)
+
+
+render : String -> Reason -> String
+render description reason =
+    when reason is
+        Failure.Equality { expected, actual } ->
+            join
+                [ description
+                , "    expected: " ++ expected
+                , "    actual:   " ++ actual
+                ]
+
+        Failure.Comparison { expected, actual } ->
+            join
+                [ description
+                , "    expected: " ++ expected
+                , "    actual:   " ++ actual
+                ]
+
+        Failure.Custom ->
+            description
+
+        Failure.TODO ->
+            "TODO: " ++ description
+
+        other ->
+            -- ArrayDiff / CollectionDiff / Invalid / … — good enough for v1.
+            join [ description, "    " ++ Debug.toString other ]
+
+
+join : Array String -> String
+join lines =
+    String.join "\n" lines

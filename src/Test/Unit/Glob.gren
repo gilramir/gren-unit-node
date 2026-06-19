@@ -1,0 +1,82 @@
+module Test.Unit.Glob exposing ( matches )
+
+{-| A tiny shell-style glob, enough to select tests by name on the CLI.
+
+* `*` matches any run of characters (including none)
+* `?` matches exactly one character
+* everything else is literal
+
+    matches "Format.*"        "Format.imports"     --> True
+    matches "*in place*"      "writes file in place" --> True
+    matches "Format.?mports"  "Format.imports"     --> True
+    matches "Format.x"        "Format.imports"     --> False
+
+Matching is whole-string (anchored at both ends); wrap a pattern in `*…*` for a
+substring search. Implemented as a classic two-cursor backtracking matcher over
+`Array Char` — no regex dependency.
+-}
+
+
+matches : String -> String -> Bool
+matches pattern str =
+    go (String.toArray pattern) (String.toArray str) 0 0
+
+
+{-| `p` indexes the pattern, `s` the string. `star`/`mark` remember the last
+`*` so we can backtrack: when a later literal fails, we let the previous `*`
+swallow one more character and retry.
+-}
+go : Array Char -> Array Char -> Int -> Int -> Bool
+go pat txt p0 s0 =
+    let
+        plen =
+            Array.length pat
+
+        slen =
+            Array.length txt
+
+        -- iterative loop carried as a record to keep backtracking explicit
+        loop state =
+            if state.s < slen then
+                when Array.get state.p pat is
+                    Just '*' ->
+                        loop { state | starP = Just state.p, starS = state.s, p = state.p + 1 }
+
+                    Just '?' ->
+                        loop { state | p = state.p + 1, s = state.s + 1 }
+
+                    Just c ->
+                        if Just c == Array.get state.s txt then
+                            loop { state | p = state.p + 1, s = state.s + 1 }
+
+                        else
+                            backtrack state
+
+                    Nothing ->
+                        backtrack state
+
+            else
+                -- consumed the whole string; any trailing pattern must be all `*`
+                trailingStars state.p
+
+        backtrack state =
+            when state.starP is
+                Just sp ->
+                    loop { state | p = sp + 1, starS = state.starS + 1, s = state.starS + 1 }
+
+                Nothing ->
+                    False
+
+        trailingStars p =
+            if p >= plen then
+                True
+
+            else
+                when Array.get p pat is
+                    Just '*' ->
+                        trailingStars (p + 1)
+
+                    _ ->
+                        False
+    in
+    loop { p = p0, s = s0, starP = Nothing, starS = 0 }

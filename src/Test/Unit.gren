@@ -1,0 +1,207 @@
+module Test.Unit exposing
+    ( Suite, Test, Outcome
+    , suite, test
+    , noSuiteFixture, noFixture, noTearDown
+    , Permissions, run
+    )
+
+{-| An xUnit / Python-`unittest`-style test framework for Gren.
+
+Unlike the stock effectful runner, this one owns its execution loop, which is
+what buys the four things `unittest` users expect:
+
+1. **Suite- and test-level fixtures** with `setUpSuite`/`tearDownSuite` (once
+   per group) and `setUp`/`tearDown` (once per test) — see [suite](#suite).
+2. **Lifecycle failures are first-class**: a thrown `setUp`/`tearDown` becomes a
+   recorded error, never a silent skip or a crash.
+3. **CLI selection** by name or glob, **verbose** per-test timing, and
+   **JUnit XML** output — all in [run](#run), via `gilramir/gren-argparse`.
+
+@docs Suite, Test, Outcome
+@docs suite, test
+@docs noSuiteFixture, noFixture, noTearDown
+@docs Permissions, run
+
+
+## Writing a suite
+
+    import Test.Unit as U
+    import Expect
+
+    arithmetic : U.Suite
+    arithmetic =
+        U.suite
+            { name = "Arithmetic"
+            , setUpSuite = U.noSuiteFixture
+            , tearDownSuite = U.noTearDown
+            , setUp = U.noFixture
+            , tearDown = U.noTearDown
+            , tests =
+                [ U.test "adds" <| \_ ->
+                    Task.succeed (Expect.equal 4 (2 + 2))
+                ]
+            }
+
+A fixture-bearing suite threads a value from `setUp` into each test body:
+
+    U.suite
+        { name = "TempDir"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = \_ -> FileSystem.makeTempDirectory perms.fs "ut" |> mapErr
+        , tearDown = \dir -> FileSystem.remove perms.fs { recursive = True } dir |> mapErr
+        , tests =
+            [ U.test "writes a file" <| \dir ->
+                writeAndCheck dir   -- : Task String Expectation
+            ]
+        }
+
+Every lifecycle task and every test body works in `Task String _`: the success
+channel carries the value (or the test's `Expectation`), and the **error
+channel is a `String`** you render yourself. Keeping errors as `String` (rather
+than an arbitrary type) is what lets the runner print them verbatim instead of
+mangling them through `Debug.toString`.
+-}
+
+import ChildProcess
+import FileSystem
+import Node
+import Task exposing (Task)
+import Expect exposing (Expectation)
+import Test.Unit.Internal as I
+import Test.Unit.Program as P
+import Test.Unit.Runner as Runner
+
+
+{-| An opaque, fixture-erased test group. Build one with [suite](#suite).
+-}
+type alias Suite =
+    I.Suite
+
+
+{-| A single test, parameterized by the **test-fixture** type its body receives.
+Build one with [test](#test). Within a `suite` call, every `test` must share the
+same fixture type (it's whatever that suite's `setUp` produces).
+-}
+type Test testFix
+    = Test
+        { name : String
+        , body : testFix -> Task String Expectation
+        }
+
+
+{-| A test's result: passed, failed an assertion, or errored (threw). Re-exported
+for reporters/consumers; you rarely match on it directly.
+-}
+type alias Outcome =
+    I.Outcome
+
+
+{-| The permissions the framework acquires and hands to your suite builder.
+-}
+type alias Permissions =
+    P.Permissions
+
+
+{-| Define a single test: a name and a body that, given the suite's test
+fixture, runs effects and returns an `Expectation`.
+
+    test "is not 1970" <| \_ ->
+        Time.now |> Task.map (\t -> Expect.notEqual 0 (Time.posixToMillis t))
+-}
+test : String -> (testFix -> Task String Expectation) -> Test testFix
+test name body =
+    Test { name = name, body = body }
+
+
+{-| Define a test group with the full xUnit lifecycle.
+
+`setUpSuite` runs once and produces a **suite fixture** handed to every `setUp`;
+`setUp` runs before each test and produces the **test fixture** handed to the
+body and to `tearDown`. The two fixture type variables are erased here, so the
+returned `Suite` is monomorphic and groups with unrelated fixtures share one
+`Array Suite`.
+-}
+suite :
+    { name : String
+    , setUpSuite : Task String suiteFix
+    , tearDownSuite : suiteFix -> Task String {}
+    , setUp : suiteFix -> Task String testFix
+    , tearDown : testFix -> Task String {}
+    , tests : Array (Test testFix)
+    }
+    -> Suite
+suite cfg =
+    let
+        unwrapped =
+            cfg.tests |> Array.map (\(Test t) -> { name = t.name, body = t.body })
+
+        testNames =
+            unwrapped |> Array.map (\t -> cfg.name ++ "." ++ t.name)
+    in
+    I.Suite
+        { name = cfg.name
+        , testNames = testNames
+        , run =
+            \selection ->
+                Runner.runSuite
+                    { name = cfg.name
+                    , setUpSuite = cfg.setUpSuite
+                    , tearDownSuite = cfg.tearDownSuite
+                    , setUp = cfg.setUp
+                    , tearDown = cfg.tearDown
+                    , tests = unwrapped
+                    , selection = selection
+                    }
+        }
+
+
+{-| A `setUpSuite`/`setUp` that produces the empty fixture `{}` — for groups or
+tests that need no fixture value.
+-}
+noSuiteFixture : Task String {}
+noSuiteFixture =
+    Task.succeed {}
+
+
+{-| A `setUp` that ignores its suite fixture and produces `{}`.
+-}
+noFixture : suiteFix -> Task String {}
+noFixture _ =
+    Task.succeed {}
+
+
+{-| A `tearDown`/`tearDownSuite` that does nothing.
+-}
+noTearDown : fixture -> Task String {}
+noTearDown _ =
+    Task.succeed {}
+
+
+{-| Build the whole test executable. Drop this in `main`:
+
+    main : Node.SimpleProgram a
+    main =
+        Test.Unit.run
+            { name = "my-tests"
+            , version = "1.0.0"
+            , suites =
+                \perms ->
+                    [ arithmetic
+                    , tempDirSuite perms
+                    ]
+            }
+
+`suites` receives the framework-acquired [Permissions](#Permissions) so your
+fixtures can touch the filesystem and spawn child processes without any `Init`
+boilerplate of your own.
+-}
+run :
+    { name : String
+    , version : String
+    , suites : Permissions -> Array Suite
+    }
+    -> Node.SimpleProgram a
+run =
+    -- delegates entirely to Test.Unit.Program
+    P.run

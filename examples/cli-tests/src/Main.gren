@@ -1,0 +1,205 @@
+module Main exposing ( main )
+
+{-| Example test executable built on `gren-ut`, porting a couple of the
+black-box CLI tests that currently live in `gren-format/tests/test_cli.py`.
+
+Run it like a unittest binary:
+
+    gren make src/Main.gren --output=app
+    node app                       # all tests
+    node app -v                    # verbose: status + timing per test
+    node app 'ShowFlag.*'          # only the --show tests
+    node app --junit-xml out.xml   # also emit JUnit XML
+    node app --list                # list qualified test names
+
+Notice what the framework gives us that the Python harness gave us for free,
+now in Gren:
+
+* `TempProject` below has a **suite fixture** (the path to the built
+  `gren-format` app, located once in `setUpSuite`) and a **per-test fixture**
+  (a fresh temp dir, made in `setUp`, removed in `tearDown` — the `with
+  TemporaryDirectory()` replacement, and it's removed even if the body fails).
+* every helper returns `Task String Expectation`, so a failed file read or a
+  nonzero exit is rendered by us, not mangled by `Debug.toString`.
+-}
+
+import Bytes exposing (Bytes)
+import ChildProcess
+import Expect exposing (Expectation)
+import FileSystem
+import FileSystem.Path as Path exposing (Path)
+import Node
+import Task exposing (Task)
+import Test.Unit as U
+
+
+main : Node.SimpleProgram a
+main =
+    U.run
+        { name = "gren-format-cli-tests"
+        , version = "1.0.0"
+        , suites =
+            \perms ->
+                [ showFlagSuite perms
+                , inPlaceSuite perms
+                ]
+        }
+
+
+
+-- SUITE 1: --show, no fixtures beyond the app path
+
+
+showFlagSuite : U.Permissions -> U.Suite
+showFlagSuite perms =
+    U.suite
+        { name = "ShowFlag"
+        , setUpSuite = locateApp perms
+        , tearDownSuite = U.noTearDown
+        , setUp = \appPath -> Task.succeed appPath
+        , tearDown = U.noTearDown
+        , tests =
+            [ U.test "formats a file to stdout" <| \appPath ->
+                runApp perms appPath { cwd = Nothing } [ "--show", helloFixture ]
+                    |> Task.map
+                        (\r ->
+                            Expect.all
+                                [ \_ -> Expect.equal 0 r.exitCode
+                                , \_ -> expectContains "module Hello" r.stdout
+                                ]
+                                {}
+                        )
+            , U.test "missing file exits nonzero" <| \appPath ->
+                runApp perms appPath { cwd = Nothing } [ "--show", "/nonexistent/Missing.gren" ]
+                    |> Task.map (\r -> Expect.notEqual 0 r.exitCode)
+            ]
+        }
+
+
+
+-- SUITE 2: positional arg formats in place, with a per-test temp dir fixture
+
+
+type alias InPlaceFixture =
+    { appPath : String
+    , dir : Path
+    }
+
+
+inPlaceSuite : U.Permissions -> U.Suite
+inPlaceSuite perms =
+    U.suite
+        { name = "InPlace"
+        , setUpSuite = locateApp perms
+        , tearDownSuite = U.noTearDown
+        , setUp =
+            \appPath ->
+                FileSystem.makeTempDirectory perms.fs "gren-ut"
+                    |> Task.map (\dir -> { appPath = appPath, dir = dir })
+                    |> Task.mapError (\e -> "makeTempDirectory: " ++ Debug.toString e)
+        , tearDown =
+            \fix ->
+                FileSystem.remove perms.fs { recursive = True } fix.dir
+                    |> Task.map (\_ -> {})
+                    |> Task.mapError (\e -> "remove temp dir: " ++ Debug.toString e)
+        , tests =
+            [ U.test "formats file in place" <| \fix ->
+                let
+                    file =
+                        Path.append (Path.fromPosixString "Hello.gren") fix.dir
+
+                    dirty =
+                        "module Hello exposing (x)\nx : Int\nx =\n    1\n"
+                in
+                writeText perms file dirty
+                    |> Task.andThen (\_ -> runApp perms fix.appPath { cwd = Just (Path.toPosixString fix.dir) } [ Path.toPosixString file ])
+                    |> Task.andThen (\_ -> readText perms file)
+                    |> Task.map (\after -> expectContains "\n\n\n" after)
+            ]
+        }
+
+
+
+-- HELPERS (these would live in the framework or a shared support module)
+
+
+helloFixture : String
+helloFixture =
+    "testfiles/Hello.gren"
+
+
+{-| Locate the built gren-format app once per suite, resolved to an ABSOLUTE
+path. This matters because the in-place test runs the app with its working
+directory set to a temp dir — a relative app path would no longer resolve from
+there. `realPath` resolves against the process cwd up front.
+-}
+locateApp : U.Permissions -> Task String String
+locateApp perms =
+    FileSystem.realPath perms.fs (Path.fromPosixString "../../../gren-format/app")
+        |> Task.map Path.toPosixString
+        |> Task.mapError (\e -> "could not locate gren-format app: " ++ Debug.toString e)
+
+
+type alias RunResult =
+    { exitCode : Int, stdout : String, stderr : String }
+
+
+{-| Spawn the app, normalizing both the success and failure channels into one
+inspectable record — exactly the `Task.onError`-into-success idiom the existing
+effectful tests already use.
+-}
+runApp : U.Permissions -> String -> { cwd : Maybe String } -> Array String -> Task String RunResult
+runApp perms appPath { cwd } args =
+    let
+        opts =
+            { ChildProcess.defaultRunOptions
+                | workingDirectory =
+                    when cwd is
+                        Just d ->
+                            ChildProcess.SetWorkingDirectory d
+
+                        Nothing ->
+                            ChildProcess.InheritWorkingDirectory
+            }
+    in
+    ChildProcess.run perms.childProcess "node" (Array.pushFirst appPath args) opts
+        |> Task.map (\okRun -> { exitCode = 0, stdout = bytesToString okRun.stdout, stderr = bytesToString okRun.stderr })
+        |> Task.onError
+            (\err ->
+                when err is
+                    ChildProcess.ProgramError e ->
+                        Task.succeed { exitCode = e.exitCode, stdout = bytesToString e.stdout, stderr = bytesToString e.stderr }
+
+                    ChildProcess.InitError e ->
+                        -- a genuine "couldn't even launch" — surface as a test error
+                        Task.fail ("could not launch app: " ++ e.errorCode)
+            )
+
+
+writeText : U.Permissions -> Path -> String -> Task String {}
+writeText perms path text =
+    FileSystem.writeFile perms.fs (Bytes.fromString text) path
+        |> Task.map (\_ -> {})
+        |> Task.mapError (\e -> "write " ++ Path.toPosixString path ++ ": " ++ Debug.toString e)
+
+
+readText : U.Permissions -> Path -> Task String String
+readText perms path =
+    FileSystem.readFile perms.fs path
+        |> Task.map bytesToString
+        |> Task.mapError (\e -> "read " ++ Path.toPosixString path ++ ": " ++ Debug.toString e)
+
+
+bytesToString : Bytes -> String
+bytesToString bytes =
+    Bytes.toString bytes
+        |> Maybe.withDefault ""
+
+
+expectContains : String -> String -> Expectation
+expectContains needle haystack =
+    if String.contains needle haystack then
+        Expect.pass
+
+    else
+        Expect.fail ("expected output to contain " ++ Debug.toString needle)
