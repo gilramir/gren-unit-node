@@ -1,120 +1,202 @@
 # gren-unit-node
 
-An xUnit / Python-`unittest`-style test framework for Gren.
+A test framework for Gren Node applications. Write your tests in Gren, run them from the command line, and get a clear pass/fail report with per-test timing.
 
-> **Status: working proof-of-concept.** The package and the
-> `examples/cli-tests/` app both compile with `gren 0.6.5`, and the example runs
-> (all features below exercised: fixtures, glob/name selection, verbose timing,
-> JUnit XML, and pass/fail/error reporting with correct exit codes). It is a v1
-> skeleton, not a polished release — the `Reason` renderer covers only the common
-> matchers, output is built once rather than streamed live, and there are no
-> tests of the framework itself yet.
+## Setup
 
-## Why this, and not the effectful runner
+Create a `tests/` application directory alongside your package or application. Add `gilramir/gren-unit-node` as a dependency in `tests/gren.json`:
 
-`blaix/gren-effectful-tests` (used in `gren-format-lib/tests`) is great for pure
-+ Task-backed assertions, but its execution model runs every Task first and
-evaluates the pure `Expectation`s last. That makes four `unittest` staples
-awkward or impossible: lifecycle hooks whose **timing** matters, *noticing*
-setup/teardown failures, per-test timing, and machine-readable output.
-
-`gren-unit-node` owns its own loop over `Task`, so it can offer all of them. It still
-reuses `gren-lang/test`'s `Expect` matchers — it pulls the structured failure
-out of an `Expectation` with `Test.Runner.getFailureReason` — so you don't learn
-a new assertion library.
-
-## Features
-
-| Feature | Where |
-|---|---|
-| Per-**suite** `setUpSuite` / `tearDownSuite` (run once) | `Test.Unit.suite` |
-| Per-**test** `setUp` / `tearDown` (run each test) | `Test.Unit.suite` |
-| Lifecycle failures recorded as real errors (not skips/crashes) | `Test.Unit.Runner` |
-| Select tests by name or glob on the CLI | `Test.Unit.Glob`, `…/Program` |
-| Verbose output: per-test status + execution time | `Test.Unit.Report` |
-| JUnit XML output (`--junit-xml`) | `Test.Unit.JUnit` |
-| Proper exit codes (0 all-pass, 1 otherwise) | via `Argparse.Program` |
-
-## The lifecycle (matches unittest exactly)
-
-```
-setUpSuite                       once; throw ⇒ every test Errored, no tearDownSuite
-  ├ for each selected test:
-  │   setUp                      throw ⇒ test Errored, no body, no tearDown
-  │     ├ body → Expectation     assertion ⇒ Passed/Failed; task error ⇒ Errored
-  │     └ tearDown               ALWAYS once setUp succeeded; throw on a passing
-  │                              test ⇒ that test becomes Errored
-  └ tearDownSuite                throw ⇒ recorded as a suite-level error
+```json
+{
+    "type": "application",
+    "platform": "node",
+    "source-directories": [ "src" ],
+    "gren-version": "0.6.5",
+    "dependencies": {
+        "direct": {
+            "gilramir/gren-unit-node": "1.0.0 <= v < 2.0.0",
+            "gren-lang/core": "7.4.2",
+            "gren-lang/node": "6.1.0",
+            "gren-lang/test": "5.0.0"
+        },
+        "indirect": {
+            "gren-lang/url": "6.0.0"
+        }
+    }
+}
 ```
 
-"Always runs `tearDown`" is guaranteed *structurally*: each body is reduced to a
-`Task Never Outcome` before `tearDown` is chained, so it can't short-circuit.
+## Your first test
 
-## CLI
-
-```bash
-gren make src/Main.gren --output=app
-
-node app                       # run everything
-node app 'Format.*'            # glob by qualified name "Suite.test"
-node app '*in place*' 'Glob.*' # multiple patterns = union
-node app -v                    # verbose: status + ms per test
-node app --list                # print qualified names, don't run
-node app --junit-xml out.xml   # also write JUnit XML
-```
-
-## Writing tests
+Create `tests/src/Main.gren`. The only required pieces are a `U.run` call in `main` and at least one suite containing named tests:
 
 ```gren
-import Test.Unit as U
-import Expect
+module Main exposing (main)
 
-arithmetic : U.Suite
-arithmetic =
-    U.suite
-        { name = "Arithmetic"
-        , setUpSuite = U.noSuiteFixture
-        , tearDownSuite = U.noTearDown
-        , setUp = U.noFixture
-        , tearDown = U.noTearDown
-        , tests =
-            [ U.test "adds" <| \_ ->
-                Task.succeed (Expect.equal 4 (2 + 2))
-            ]
-        }
+import Expect
+import Node
+import Task
+import Test.Unit as U
+
 
 main : Node.SimpleProgram a
 main =
     U.run
         { name = "my-tests"
         , version = "1.0.0"
-        , suites = \perms -> [ arithmetic ]
+        , suites = \_ -> [ mathSuite ]
+        }
+
+
+mathSuite : U.Suite
+mathSuite =
+    U.suite
+        { name = "Math"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = U.noFixture
+        , tearDown = U.noTearDown
+        , tests =
+            [ U.test "addition" <| \_ ->
+                Task.succeed (Expect.equal 4 (2 + 2))
+            , U.test "subtraction" <| \_ ->
+                Task.succeed (Expect.equal 1 (3 - 2))
+            ]
         }
 ```
 
-`perms : U.Permissions` (`{ fs, childProcess }`) is acquired by the framework
-and handed to your suite builder, so fixtures can touch the filesystem and spawn
-processes without any `Init` boilerplate. See `examples/cli-tests/` for a port
-of two real `gren-format` CLI tests, including a temp-dir-per-test fixture.
+Each test body is a function from the test fixture (ignored here with `_`) to a `Task String Expectation`. Use the standard `Expect.*` functions from `gren-lang/test` for assertions — the same ones you already know.
 
-## Module map
+## Build and run
 
-| Module | Role |
+```bash
+gren make src/Main.gren --output=app
+node app
+```
+
+```
+Starting tests
+
+
+Ran 2 tests in 12 ms
+
+OK — 2 passed
+```
+
+Add `-v` for a line per test:
+
+```bash
+node app -v
+```
+
+```
+Math.addition                    ok    (6 ms)
+Math.subtraction                 ok    (6 ms)
+
+
+Ran 2 tests in 12 ms
+
+OK — 2 passed
+```
+
+## Selecting tests
+
+Pass one or more glob patterns to run only matching tests. Test names are fully-qualified as `Suite.test`:
+
+```bash
+node app 'Math.*'        # every test in the Math suite
+node app '*addition*'    # any test whose name contains "addition"
+node app 'A.*' 'B.*'    # multiple patterns are a union
+node app --list          # print all qualified names, don't run
+```
+
+## Tests that need resources
+
+When tests need files, processes, or other external state, use `setUp` and `tearDown`. They run before and after each test, and **`tearDown` is guaranteed to run even if the test fails**, so resources are always cleaned up.
+
+`U.Permissions` gives you `fs` (filesystem) and `childProcess` permissions. The framework acquires these for you and passes them to your suite builder — no `Init` wiring needed.
+
+Here is a suite where each test gets a fresh temporary directory:
+
+```gren
+import FileSystem
+import FileSystem.Path as Path exposing (Path)
+import Task
+
+
+tempDirSuite : U.Permissions -> U.Suite
+tempDirSuite perms =
+    U.suite
+        { name = "TempDir"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp =
+            \_ ->
+                FileSystem.makeTempDirectory perms.fs "my-tests"
+                    |> Task.mapError (\e -> "setUp: " ++ Debug.toString e)
+        , tearDown =
+            \dir ->
+                FileSystem.remove perms.fs { recursive = True } dir
+                    |> Task.map (\_ -> {})
+                    |> Task.mapError (\e -> "tearDown: " ++ Debug.toString e)
+        , tests =
+            [ U.test "creates a file" <| \dir ->
+                let
+                    file =
+                        Path.append (Path.fromPosixString "hello.txt") dir
+                in
+                FileSystem.writeFile perms.fs (Bytes.fromString "hello") file
+                    |> Task.map (\_ -> Expect.pass)
+                    |> Task.mapError (\e -> "write failed: " ++ Debug.toString e)
+            ]
+        }
+```
+
+Pass `tempDirSuite perms` alongside your other suites in `main`:
+
+```gren
+suites = \perms -> [ mathSuite, tempDirSuite perms ]
+```
+
+### Suite-level setup
+
+`setUpSuite` and `tearDownSuite` run once for the whole suite — useful for expensive one-time work like locating a binary or opening a connection. The value `setUpSuite` produces is passed to every `setUp` call as its first argument.
+
+```gren
+U.suite
+    { name = "CLI"
+    , setUpSuite =
+        -- locate the binary once; each test receives its path
+        FileSystem.realPath perms.fs (Path.fromPosixString "../app")
+            |> Task.map Path.toPosixString
+            |> Task.mapError (\e -> "could not find app: " ++ Debug.toString e)
+    , tearDownSuite = U.noTearDown
+    , setUp = \appPath -> Task.succeed appPath
+    , tearDown = U.noTearDown
+    , tests = [ ... ]
+    }
+```
+
+### Error channel
+
+Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
+
+## What happens when things go wrong
+
+| Situation | Result |
 |---|---|
-| `Test.Unit` | public facade: `suite`, `test`, `run`, fixture defaults |
-| `Test.Unit.Program` | CLI wiring (argparse), report + XML orchestration, exit code |
-| `Test.Unit.Runner` | the execution loop + lifecycle semantics |
-| `Test.Unit.Internal` | erased `Suite` type + result types (cycle-breaker) |
-| `Test.Unit.Report` | console reporter (plain + verbose, ANSI) |
-| `Test.Unit.JUnit` | JUnit XML serialization |
-| `Test.Unit.Reason` | `Expectation` failure → message |
-| `Test.Unit.Glob` | shell-style `*`/`?` matcher (exposed, unit-testable) |
+| `setUpSuite` fails | Every test in the suite is marked **Errored**; `tearDownSuite` does not run |
+| `setUp` fails | That test is marked **Errored**; its `tearDown` does not run |
+| Test body fails an assertion | Test is marked **Failed** |
+| Test body task errors | Test is marked **Errored** |
+| `tearDown` fails on a passing test | Test becomes **Errored** |
+| `tearDown` fails on an already-failed test | Original failure is kept |
+| `tearDownSuite` fails | Recorded as a suite-level error alongside the test results |
 
-## Known limitations (inherent to Gren)
+All tests in a suite always run — there is no bail-out on first failure.
 
-* **No auto-discovery.** No reflection ⇒ you list suites/tests explicitly (same
-  as the effectful runner). Names are explicit strings.
-* **No per-test crash isolation.** Catchable failures are *Task* failures. A
-  pure runtime crash (`Debug.todo`, kernel abort) takes the process down — only
-  true subprocess isolation would prevent that, which is heavier than v1 wants.
-* **Serial only.** Tests run in order; no parallelism (keeps fixtures simple).
+## Other CLI flags
+
+```bash
+node app --junit-xml results.xml   # also write JUnit XML (useful in CI)
+```
