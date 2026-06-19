@@ -1,7 +1,7 @@
 {
     "type": "package",
     "platform": "node",
-    "name": "gilramir/gren-ut",
+    "name": "gilramir/gren-unit",
     "summary": "xUnit-style test framework: fixtures, CLI selection, timing, JUnit XML",
     "license": "BSD-3-Clause",
     "version": "1.0.0",

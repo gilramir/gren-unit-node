@@ -1,4 +1,4 @@
-# gren-ut
+# gren-unit
 
 An xUnit / Python-`unittest`-style test framework for Gren.
 
@@ -18,7 +18,7 @@ evaluates the pure `Expectation`s last. That makes four `unittest` staples
 awkward or impossible: lifecycle hooks whose **timing** matters, *noticing*
 setup/teardown failures, per-test timing, and machine-readable output.
 
-`gren-ut` owns its own loop over `Task`, so it can offer all of them. It still
+`gren-unit` owns its own loop over `Task`, so it can offer all of them. It still
 reuses `gren-lang/test`'s `Expect` matchers — it pulls the structured failure
 out of an `Expectation` with `Test.Runner.getFailureReason` — so you don't learn
 a new assertion library.
