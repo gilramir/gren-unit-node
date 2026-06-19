@@ -1,4 +1,4 @@
-module Test.Unit.JUnit exposing ( toXmlString )
+module Test.Runner.UnitNode.JUnit exposing ( toXmlString )
 
 {-| Serialize results to the de-facto JUnit XML schema that CI systems
 (Jenkins, GitLab, GitHub Actions reporters, …) understand:
@@ -18,7 +18,7 @@ and text values are XML-escaped. This is pure string building over the same
 caller does the `FileSystem.writeFile`.
 -}
 
-import Test.Unit.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
+import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
 
 
 toXmlString : Array SuiteResult -> String

@@ -1,4 +1,4 @@
-module Test.Unit.Internal exposing
+module Test.Runner.UnitNode.Internal exposing
     ( Suite(..)
     , Selection
     , Outcome(..)
@@ -9,11 +9,11 @@ module Test.Unit.Internal exposing
 
 {-| Shared, package-internal data types.
 
-This module exists purely to break an import cycle: `Test.Unit` (the public
-facade, where `suite`/`test` live) and `Test.Unit.Runner` (the execution loop)
+This module exists purely to break an import cycle: `Test.Runner.UnitNode` (the public
+facade, where `suite`/`test` live) and `Test.Runner.UnitNode.Runner` (the execution loop)
 both need the *erased* `Suite` representation, so it can't live in either of
 them. Nothing here is re-exposed from the package except, opaquely, `Suite` and
-`Outcome` (re-exported by `Test.Unit`).
+`Outcome` (re-exported by `Test.Runner.UnitNode`).
 
 The central trick is the `Suite` constructor: a `suite { … }` call is generic
 over a suite-fixture type and a test-fixture type, but the moment it's built we
@@ -64,7 +64,7 @@ type alias Selection =
   passing test. Carries the diagnostic.
 
 There is deliberately no `Skipped` here for *deselected* tests — those never
-produce a result at all. (An explicit `Test.Unit.skip` could add one later.)
+produce a result at all. (An explicit `Test.Runner.UnitNode.skip` could add one later.)
 -}
 type Outcome
     = Passed

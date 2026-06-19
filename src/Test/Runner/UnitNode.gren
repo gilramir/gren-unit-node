@@ -1,4 +1,4 @@
-module Test.Unit exposing
+module Test.Runner.UnitNode exposing
     ( Suite, Test, Outcome
     , suite, test
     , noSuiteFixture, noFixture, noTearDown
@@ -25,7 +25,7 @@ what buys the four things `unittest` users expect:
 
 ## Writing a suite
 
-    import Test.Unit as U
+    import Test.Runner.UnitNode as U
     import Expect
 
     arithmetic : U.Suite
@@ -67,9 +67,9 @@ import Init
 import Node
 import Task exposing (Task)
 import Expect exposing (Expectation)
-import Test.Unit.Internal as I
-import Test.Unit.Program as P
-import Test.Unit.Runner as Runner
+import Test.Runner.UnitNode.Internal as I
+import Test.Runner.UnitNode.Program as P
+import Test.Runner.UnitNode.Runner as Runner
 
 
 {-| An opaque, fixture-erased test group. Build one with [suite](#suite).
@@ -177,7 +177,7 @@ access, use [runWith](#runWith).
 
     main : Node.SimpleProgram a
     main =
-        Test.Unit.run
+        Test.Runner.UnitNode.run
             { name = "my-tests"
             , version = "1.0.0"
             , suites = [ arithmetic, stringTests ]
@@ -195,7 +195,7 @@ run =
 
 {-| Like [run](#run), but you supply the initialization step. Use this when
 your tests need permissions other than `fs + childProcess`, or none at all.
-See `Test.Unit.Program.runWith` for full documentation.
+See `Test.Runner.UnitNode.Program.runWith` for full documentation.
 -}
 runWith :
     { name : String

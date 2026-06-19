@@ -1,7 +1,7 @@
-module Test.Unit.Runner exposing ( runSuite )
+module Test.Runner.UnitNode.Runner exposing ( runSuite )
 
 {-| The execution loop. One function, `runSuite`, which is still generic over
-the two fixture types — it is called from inside `Test.Unit.suite`, *before*
+the two fixture types — it is called from inside `Test.Runner.UnitNode.suite`, *before*
 erasure, and the resulting `Task Never SuiteResult` is what gets erased.
 
 ## Lifecycle, matching Python's unittest exactly
@@ -24,7 +24,7 @@ body can't short-circuit the chain. Likewise `tearDown`'s own error is caught
 and folded in, never propagated. The only thing that can skip work is an
 *earlier* lifecycle step failing, which is the intended semantics.
 
-Errors are plain `String`s throughout (see `Test.Unit`): the user is
+Errors are plain `String`s throughout (see `Test.Runner.UnitNode`): the user is
 responsible for rendering their own effect errors to text, which also sidesteps
 the `Debug.toString` mangling that bites the stock effectful runner.
 -}
@@ -32,8 +32,8 @@ the `Debug.toString` mangling that bites the stock effectful runner.
 import Task exposing (Task)
 import Expect exposing (Expectation)
 import Test.Runner
-import Test.Unit.Internal as I exposing (Outcome(..), SuiteResult, TestResult, Selection)
-import Test.Unit.Reason as Reason
+import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult, Selection)
+import Test.Runner.UnitNode.Reason as Reason
 import Time
 
 

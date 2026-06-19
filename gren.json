@@ -6,8 +6,8 @@
     "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules": [
-        "Test.Unit",
-        "Test.Unit.Glob"
+        "Test.Runner.UnitNode",
+        "Test.Runner.UnitNode.Glob"
     ],
     "gren-version": "0.6.0 <= v < 0.7.0",
     "dependencies": {

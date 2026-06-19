@@ -1,4 +1,4 @@
-module Test.Unit.Glob exposing ( matches )
+module Test.Runner.UnitNode.Glob exposing ( matches )
 
 {-| A tiny shell-style glob, enough to select tests by name on the CLI.
 

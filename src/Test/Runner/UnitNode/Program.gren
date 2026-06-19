@@ -1,4 +1,4 @@
-module Test.Unit.Program exposing ( run, runWith )
+module Test.Runner.UnitNode.Program exposing ( run, runWith )
 
 {-| The CLI entry point. `run` and `runWith` build a complete `Node.SimpleProgram`
 on top of `gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
@@ -34,10 +34,10 @@ import Node
 import Stream.Log
 import Task exposing (Task)
 import Terminal
-import Test.Unit.Internal as I exposing (Suite(..), SuiteResult, Selection)
-import Test.Unit.JUnit as JUnit
-import Test.Unit.Glob as Glob
-import Test.Unit.Report as Report
+import Test.Runner.UnitNode.Internal as I exposing (Suite(..), SuiteResult, Selection)
+import Test.Runner.UnitNode.JUnit as JUnit
+import Test.Runner.UnitNode.Glob as Glob
+import Test.Runner.UnitNode.Report as Report
 
 
 type alias Flags =

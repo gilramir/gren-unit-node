@@ -36,7 +36,7 @@ module Main exposing (main)
 import Expect
 import Node
 import Task
-import Test.Unit as U
+import Test.Runner.UnitNode as U
 
 
 main : Node.SimpleProgram a
@@ -128,7 +128,7 @@ import FileSystem.Path as Path exposing (Path)
 import Init
 import Node
 import Task
-import Test.Unit as U
+import Test.Runner.UnitNode as U
 
 
 type alias Perms =
@@ -229,7 +229,7 @@ import FileSystem
 import FileSystem.Path as Path
 import Task
 import Expect
-import Test.Unit as U
+import Test.Runner.UnitNode as U
 
 
 goldenSuite : Perms -> U.Suite

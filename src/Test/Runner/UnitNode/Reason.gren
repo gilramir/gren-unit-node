@@ -1,4 +1,4 @@
-module Test.Unit.Reason exposing ( render )
+module Test.Runner.UnitNode.Reason exposing ( render )
 
 {-| Render a failed `Expectation` into a readable one-or-few-line message.
 
