@@ -287,27 +287,20 @@ node app --junit-xml results.xml   # also write JUnit XML (useful in CI)
 
 ## Design notes
 
-`blaix/gren-effectful-tests` is the established Gren testing library and the right
-choice for most projects. It has a clean API: each test is an effectful task that
-produces an `Expectation`, and the runner collects and reports them all. If your
-tests don't need per-test lifecycle hooks or structured machine-readable output,
-it is likely the better fit.
+Why another Gren test runner?
 
-gren-unit-node exists because a specific aspect of that execution model made
-certain test patterns hard to express. Effectful-tests runs all of the test tasks
-and collects the resulting `Expectation` values, then evaluates them together. For
-independent tests this works well. Where it becomes awkward is when the
-**ordering and timing** of individual steps matters:
+This gren-unit-node package exists because I wanted to include timing
+information and setup and teardown functions.  So we can't run all the
+test tasks first and the evaulate the resulting `Expectation` values
+together. In The gren-unit-node model, the **ordering and timing**
+of individual steps matters:
 
-- **Per-test setUp and tearDown.** There is no structural hook that runs between
-  one test finishing and the next one starting. A tearDown that must release the
-  resource its test acquired — and do so before the next setUp runs — has no
-  natural home in a collect-then-evaluate model.
+- **Per-test setUp and tearDown.** A tearDown that must release the
+  resource its test acquired and do so before the next setUp runs.
 
 - **Setup failures as first-class outcomes.** When setUp fails, the right
   behavior is to mark that test as Errored, skip its body entirely, and still
-  run tearDown for any fixtures that did get created. Expressing this as a
-  composed `Task` requires owning the loop.
+  run tearDown for any fixtures that did get created.
 
 - **Per-test timing.** Knowing how long each individual test took requires
   observing when each one starts and finishes, which is difficult to recover
