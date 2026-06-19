@@ -2,7 +2,7 @@ module Test.Unit exposing
     ( Suite, Test, Outcome
     , suite, test
     , noSuiteFixture, noFixture, noTearDown
-    , Permissions, run
+    , Permissions, run, runWith
     )
 
 {-| An xUnit / Python-`unittest`-style test framework for Gren.
@@ -65,6 +65,7 @@ mangling them through `Debug.toString`.
 
 import ChildProcess
 import FileSystem
+import Init
 import Node
 import Task exposing (Task)
 import Expect exposing (Expectation)
@@ -203,5 +204,19 @@ run :
     }
     -> Node.SimpleProgram a
 run =
-    -- delegates entirely to Test.Unit.Program
     P.run
+
+
+{-| Like [run](#run), but you supply the initialization step. Use this when
+your tests need permissions other than `fs + childProcess`, or none at all.
+See `Test.Unit.Program.runWith` for full documentation.
+-}
+runWith :
+    { name : String
+    , version : String
+    , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , suites : perms -> Array Suite
+    }
+    -> Node.SimpleProgram a
+runWith =
+    P.runWith

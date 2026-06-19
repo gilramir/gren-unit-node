@@ -1,7 +1,11 @@
-module Test.Unit.Program exposing ( Permissions, run )
+module Test.Unit.Program exposing ( Permissions, run, runWith )
 
-{-| The CLI entry point. `run` builds a complete `Node.SimpleProgram` on top of
-`gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
+{-| The CLI entry point. `run` and `runWith` build a complete `Node.SimpleProgram`
+on top of `gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
+
+`run` is the convenience form: it acquires `FileSystem` and `ChildProcess`
+permissions and passes them to your suite builder as `Permissions`. Use
+`runWith` when you need a different set of permissions — or none at all.
 
 CLI surface:
 
@@ -16,11 +20,6 @@ Exit code is `0` only if every selected test passed (argparse's `Succeeded`);
 any failure/error yields `Failed` → exit `1`, after the report is printed. A
 bad flag or a `--junit-xml` write failure fails the task → exit `1` with a
 diagnostic on stderr, exactly the Unix split `Argparse.Program` already bakes in.
-
-The framework owns initialization of the **common** Node permissions
-(filesystem + child process) and hands them to the user's suite-builder via
-`Permissions`. That covers the headline use case — black-box CLI tests that
-shell out and poke temp files — without the user touching `Init`.
 -}
 
 import Argparse.Parser as AP
@@ -42,8 +41,7 @@ import Test.Unit.Glob as Glob
 import Test.Unit.Report as Report
 
 
-{-| The permissions the framework acquires for you and passes to your suites.
-Your `setUp`/`body`/`tearDown` tasks close over these.
+{-| The permissions `run` acquires and passes to your suite builder.
 -}
 type alias Permissions =
     { fs : FileSystem.Permission
@@ -59,12 +57,17 @@ type alias Flags =
     }
 
 
-type alias Context =
-    { perms : Permissions
+type alias Context perms =
+    { perms : perms
+    , fs : FileSystem.Permission
     , useColor : Bool
     }
 
 
+{-| Run the test suite, acquiring `FileSystem` and `ChildProcess` permissions
+and passing them to your suite builder. This is the right choice for most test
+suites that shell out and read/write files.
+-}
 run :
     { name : String
     , version : String
@@ -72,6 +75,51 @@ run :
     }
     -> Node.SimpleProgram a
 run userConfig =
+    runWith
+        { name = userConfig.name
+        , version = userConfig.version
+        , init =
+            \done ->
+                Init.await FileSystem.initialize <| \fs ->
+                Init.await ChildProcess.initialize <| \cp ->
+                    done { fs = fs, childProcess = cp }
+        , suites = userConfig.suites
+        }
+
+
+{-| Run the test suite with a custom initialization step. Use this when you
+need permissions beyond — or instead of — the `fs + childProcess` pair that
+`run` provides.
+
+The `init` argument follows the same continuation pattern as `Init.await`:
+call `done` with whatever permissions your tests need.
+
+    U.runWith
+        { name = "my-tests"
+        , version = "1.0.0"
+        , init =
+            \done ->
+                Init.await HttpClient.initialize <| \http ->
+                    done { http = http }
+        , suites = \perms -> [ mySuite perms ]
+        }
+
+For no permissions at all:
+
+    init = \done -> done {}
+
+Note: the framework always acquires `FileSystem.Permission` for itself (to
+support `--junit-xml`). If your tests also need filesystem access, acquire it
+separately in your `init`.
+-}
+runWith :
+    { name : String
+    , version : String
+    , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , suites : perms -> Array Suite
+    }
+    -> Node.SimpleProgram a
+runWith userConfig =
     Program.runRootWithContext
         { name = userConfig.name
         , version = userConfig.version
@@ -79,13 +127,14 @@ run userConfig =
         , init =
             \_env toProgram ->
                 Init.await FileSystem.initialize <| \fs ->
-                Init.await ChildProcess.initialize <| \cp ->
                 Init.await Terminal.initialize <| \termConfig ->
                 Init.awaitTask Node.getEnvironmentVariables <| \envVars ->
-                    toProgram
-                        { perms = { fs = fs, childProcess = cp }
-                        , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
-                        }
+                    userConfig.init <| \userPerms ->
+                        toProgram
+                            { perms = userPerms
+                            , fs = fs
+                            , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
+                            }
         , onCommand = onCommand userConfig.suites
         }
 
@@ -113,10 +162,6 @@ command =
     }
 
 
-{-| A pass-through string value parser. `Argparse.Parser` only ships
-`pathParser`/`grenFileParser`, but a `ValueParser` is just a record, so a
-glob-pattern string parser is a one-liner.
--}
 stringParser : AP.ValueParser String
 stringParser =
     { label = "pattern"
@@ -125,7 +170,7 @@ stringParser =
     }
 
 
-onCommand : (Permissions -> Array Suite) -> Node.Environment -> Context -> Flags -> Task String Program.Outcome
+onCommand : (perms -> Array Suite) -> Node.Environment -> Context perms -> Flags -> Task String Program.Outcome
 onCommand buildSuites env ctx flags =
     let
         suites =
@@ -140,8 +185,6 @@ onCommand buildSuites env ctx flags =
 
     else
         runAll suites selection
-            -- widen the runner's `Never` error channel to `String` so it chains
-            -- with reportAndWrite, which can fail (a JUnit write error).
             |> Task.onError never
             |> Task.andThen
                 (\suiteResults ->
@@ -150,9 +193,6 @@ onCommand buildSuites env ctx flags =
                 )
 
 
-{-| With no patterns, everything is selected. With patterns, a test runs if any
-pattern globs its qualified name.
--}
 selectionFrom : Array String -> Selection
 selectionFrom patterns =
     { isSelected =
@@ -167,7 +207,6 @@ selectionFrom patterns =
 
 runAll : Array Suite -> Selection -> Task Never (Array SuiteResult)
 runAll suites selection =
-    -- Each suite's `run` is `Task Never SuiteResult`; sequence them serially.
     Array.foldl
         (\(Suite s) acc ->
             acc
@@ -181,7 +220,7 @@ runAll suites selection =
         suites
 
 
-reportAndWrite : Node.Environment -> Context -> Flags -> Array SuiteResult -> Task String {}
+reportAndWrite : Node.Environment -> Context perms -> Flags -> Array SuiteResult -> Task String {}
 reportAndWrite env ctx flags suiteResults =
     let
         style =
@@ -199,7 +238,7 @@ reportAndWrite env ctx flags suiteResults =
             (\_ ->
                 when flags.junitXml is
                     Just path ->
-                        FileSystem.writeFile ctx.perms.fs (bytesOf (JUnit.toXmlString suiteResults)) path
+                        FileSystem.writeFile ctx.fs (bytesOf (JUnit.toXmlString suiteResults)) path
                             |> Task.map (\_ -> {})
                             |> Task.mapError (\e -> "could not write JUnit XML: " ++ Debug.toString e)
 
@@ -236,5 +275,4 @@ outcomeFor suiteResults =
 
 bytesOf : String -> Bytes
 bytesOf s =
-    -- placeholder for the String→Bytes conversion (Bytes.fromString)
     Bytes.fromString s
