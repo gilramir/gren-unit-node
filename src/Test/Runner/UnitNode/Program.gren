@@ -70,6 +70,8 @@ run userConfig =
         { name = userConfig.name
         , version = userConfig.version
         , init = \done -> done {}
+        , globalSetUp = \_ -> Task.succeed {}
+        , globalTearDown = \_ -> Task.succeed {}
         , suites = \_ -> userConfig.suites
         }
 
@@ -103,6 +105,8 @@ runWith :
     { name : String
     , version : String
     , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , globalSetUp : perms -> Task String {}
+    , globalTearDown : perms -> Task String {}
     , suites : perms -> Array Suite
     }
     -> Node.SimpleProgram a
@@ -122,7 +126,7 @@ runWith userConfig =
                             , fs = fs
                             , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
                             }
-        , onCommand = onCommand userConfig.suites
+        , onCommand = onCommand userConfig.suites userConfig.globalSetUp userConfig.globalTearDown
         }
 
 
@@ -157,8 +161,8 @@ stringParser =
     }
 
 
-onCommand : (perms -> Array Suite) -> Node.Environment -> Context perms -> Flags -> Task String Program.Outcome
-onCommand buildSuites env ctx flags =
+onCommand : (perms -> Array Suite) -> (perms -> Task String {}) -> (perms -> Task String {}) -> Node.Environment -> Context perms -> Flags -> Task String Program.Outcome
+onCommand buildSuites globalSetUp globalTearDown env ctx flags =
     let
         suites =
             buildSuites ctx.perms
@@ -171,12 +175,22 @@ onCommand buildSuites env ctx flags =
             |> Task.map (\_ -> Program.Succeeded)
 
     else
-        runAll suites selection
-            |> Task.onError never
+        globalSetUp ctx.perms
+            |> Task.mapError (\e -> "globalSetUp: " ++ e)
             |> Task.andThen
-                (\suiteResults ->
-                    reportAndWrite env ctx flags suiteResults
-                        |> Task.map (\_ -> outcomeFor suiteResults)
+                (\_ ->
+                    runAll suites selection
+                        |> Task.onError never
+                        |> Task.andThen
+                            (\suiteResults ->
+                                reportAndWrite env ctx flags suiteResults
+                                    |> Task.andThen
+                                        (\_ ->
+                                            globalTearDown ctx.perms
+                                                |> Task.mapError (\e -> "globalTearDown: " ++ e)
+                                        )
+                                    |> Task.map (\_ -> outcomeFor suiteResults)
+                            )
                 )
 
 

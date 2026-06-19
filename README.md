@@ -144,11 +144,13 @@ main =
             \done ->
                 Init.await FileSystem.initialize <| \fs ->
                     done { fs = fs }
+        , globalSetUp = U.noFixture
+        , globalTearDown = U.noTearDown
         , suites = \perms -> [ tempDirSuite perms ]
         }
 ```
 
-Your `suites` function receives whatever record you passed to `done`.
+Your `suites` function receives whatever record you passed to `done`. Use `U.noFixture` and `U.noTearDown` as no-ops when you don't need a global lifecycle.
 
 ### Per-test setup and teardown
 
@@ -200,6 +202,29 @@ U.suite
     , tests = [ ... ]
     }
 ```
+
+### Global setup and teardown
+
+`globalSetUp` and `globalTearDown` run once around the entire test run — before any suite starts and after all suites finish. Both receive the same `perms` record as `suites`. Use them for expensive one-time work that spans all suites, such as starting a server or seeding a database:
+
+```gren
+main : Node.SimpleProgram a
+main =
+    U.runWith
+        { name = "my-tests"
+        , version = "1.0.0"
+        , init =
+            \done ->
+                Init.await FileSystem.initialize <| \fs ->
+                Init.await ChildProcess.initialize <| \cp ->
+                    done { fs = fs, childProcess = cp }
+        , globalSetUp = \perms -> startTestServer perms.childProcess
+        , globalTearDown = \perms -> stopTestServer perms.childProcess
+        , suites = \perms -> [ apiSuite perms ]
+        }
+```
+
+If `globalSetUp` fails, no suites run and `globalTearDown` is skipped. If `globalTearDown` fails, the program exits with an error after the report has been printed.
 
 ### Multiple permissions
 
@@ -269,6 +294,7 @@ goldenSuite perms =
 
 | Situation | Result |
 |---|---|
+| `globalSetUp` fails | No suites run; program exits with error; `globalTearDown` does not run |
 | `setUpSuite` fails | Every test in the suite is marked **Errored**; `tearDownSuite` does not run |
 | `setUp` fails | That test is marked **Errored**; its `tearDown` does not run |
 | Test body fails an assertion | Test is marked **Failed** |
@@ -276,6 +302,7 @@ goldenSuite perms =
 | `tearDown` fails on a passing test | Test becomes **Errored** |
 | `tearDown` fails on an already-failed test | Original failure is kept |
 | `tearDownSuite` fails | Recorded as a suite-level error alongside the test results |
+| `globalTearDown` fails | Program exits with error after the report is printed |
 
 All tests in a suite always run — there is no bail-out on first failure.
 

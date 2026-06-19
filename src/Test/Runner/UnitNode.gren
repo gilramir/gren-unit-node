@@ -157,14 +157,14 @@ noSuiteFixture =
     Task.succeed {}
 
 
-{-| A `setUp` that ignores its suite fixture and produces `{}`.
+{-| A `setUp` or `globalSetUp` that ignores its fixture and produces `{}`.
 -}
 noFixture : suiteFix -> Task String {}
 noFixture _ =
     Task.succeed {}
 
 
-{-| A `tearDown`/`tearDownSuite` that does nothing.
+{-| A `tearDown`, `tearDownSuite`, or `globalTearDown` that does nothing.
 -}
 noTearDown : fixture -> Task String {}
 noTearDown _ =
@@ -201,6 +201,8 @@ runWith :
     { name : String
     , version : String
     , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , globalSetUp : perms -> Task String {}
+    , globalTearDown : perms -> Task String {}
     , suites : perms -> Array Suite
     }
     -> Node.SimpleProgram a
