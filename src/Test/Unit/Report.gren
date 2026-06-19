@@ -4,8 +4,8 @@ module Test.Unit.Report exposing ( Style(..), render )
 
 Two styles, mirroring `python -m unittest` and `… -v`:
 
-* `Plain` — one status char per test (`.` pass, `F` fail, `E` error) then a
-  summary block.
+* `Plain` — prints "Starting tests", then the failure/error detail blocks, then
+  a summary with pass/fail counts.
 * `Verbose` — one line per test with its fully-qualified name, status, and
   wall-clock duration, then the same summary.
 
@@ -49,9 +49,7 @@ render opts suiteResults =
         body =
             when opts.style is
                 Plain ->
-                    allResults
-                        |> Array.map (statusChar opts.useColor)
-                        |> String.join ""
+                    "Starting tests"
 
                 Verbose ->
                     allResults
@@ -64,6 +62,9 @@ render opts suiteResults =
         errors =
             allResults |> Array.keepIf (\r -> isErrored r.outcome)
 
+        passed =
+            allResults |> Array.keepIf (\r -> not (isFailed r.outcome || isErrored r.outcome))
+
         totalMs =
             allResults |> Array.foldl (\r acc -> acc + r.durationMs) 0
     in
@@ -75,25 +76,13 @@ render opts suiteResults =
         , suiteErrorBlock suiteErrors
         , summaryLine
             { total = Array.length allResults
+            , passed = Array.length passed
             , failures = Array.length failures
             , errors = Array.length errors + Array.length suiteErrors
             , totalMs = totalMs
             , useColor = opts.useColor
             }
         ]
-
-
-statusChar : Bool -> TestResult -> String
-statusChar useColor r =
-    when r.outcome is
-        Passed ->
-            color useColor green "."
-
-        Failed _ ->
-            color useColor red "F"
-
-        Errored _ ->
-            color useColor yellow "E"
 
 
 verboseLine : Bool -> TestResult -> String
@@ -145,7 +134,7 @@ suiteErrorBlock errs =
 
 
 summaryLine :
-    { total : Int, failures : Int, errors : Int, totalMs : Int, useColor : Bool }
+    { total : Int, passed : Int, failures : Int, errors : Int, totalMs : Int, useColor : Bool }
     -> String
 summaryLine s =
     let
@@ -153,17 +142,19 @@ summaryLine s =
             "Ran " ++ String.fromInt s.total ++ " tests in " ++ String.fromInt s.totalMs ++ " ms"
     in
     if s.failures == 0 && s.errors == 0 then
-        ran ++ "\n\n" ++ color s.useColor green "OK"
+        ran ++ "\n\n" ++ color s.useColor green ("OK — " ++ String.fromInt s.passed ++ " passed")
 
     else
         ran
             ++ "\n\n"
             ++ color s.useColor red
-                ("FAILED (failures="
+                ("FAILED — "
+                    ++ String.fromInt s.passed
+                    ++ " passed, "
                     ++ String.fromInt s.failures
-                    ++ ", errors="
+                    ++ " failed, "
                     ++ String.fromInt s.errors
-                    ++ ")"
+                    ++ " errored"
                 )
 
 
