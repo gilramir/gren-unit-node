@@ -68,21 +68,21 @@ render opts suiteResults =
         totalMs =
             allResults |> Array.foldl (\r acc -> acc + r.durationMs) 0
     in
-    String.join "\n"
-        [ body
-        , ""
-        , detailBlock "FAIL" failures
-        , detailBlock "ERROR" errors
-        , suiteErrorBlock suiteErrors
-        , summaryLine
-            { total = Array.length allResults
-            , passed = Array.length passed
-            , failures = Array.length failures
-            , errors = Array.length errors + Array.length suiteErrors
-            , totalMs = totalMs
-            , useColor = opts.useColor
-            }
-        ]
+    [ body
+    , detailBlock "FAIL" failures
+    , detailBlock "ERROR" errors
+    , suiteErrorBlock suiteErrors
+    , summaryLine
+        { total = Array.length allResults
+        , passed = Array.length passed
+        , failures = Array.length failures
+        , errors = Array.length errors + Array.length suiteErrors
+        , totalMs = totalMs
+        , useColor = opts.useColor
+        }
+    ]
+        |> Array.keepIf (\s -> s /= "")
+        |> String.join "\n\n\n"
 
 
 verboseLine : Bool -> TestResult -> String
