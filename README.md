@@ -1,6 +1,6 @@
 # gren-unit-node
 
-A test framework for Gren Node applications. Write your tests in Gren, run them from the command line, and get a clear pass/fail report with per-test timing.
+A test framework for Gren Node applications. Write your tests in Gren, run them from the command line, and get a clear pass/fail report with per-suite timing (or per-test timing with `-v`).
 
 ## Setup
 
@@ -79,7 +79,7 @@ node app
 ```
 
 ```
-Starting tests
+Math                                     ok    (12 ms)
 
 
 Ran 2 tests in 12 ms
@@ -94,8 +94,8 @@ node app -v
 ```
 
 ```
-Math.addition                    ok    (6 ms)
-Math.subtraction                 ok    (6 ms)
+Math.addition                            ok    (6 ms)
+Math.subtraction                         ok    (6 ms)
 
 
 Ran 2 tests in 12 ms

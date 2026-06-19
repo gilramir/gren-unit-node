@@ -4,9 +4,9 @@ module Test.Unit.Report exposing ( Style(..), render )
 
 Two styles, mirroring `python -m unittest` and `… -v`:
 
-* `Plain` — prints "Starting tests", then the failure/error detail blocks, then
-  a summary with pass/fail counts.
-* `Verbose` — one line per test with its fully-qualified name, status, and
+* `Plain` — one line per **suite** (name, status, total duration), then the
+  failure/error detail blocks, then a summary with pass/fail counts.
+* `Verbose` — one line per **test** with its fully-qualified name, status, and
   wall-clock duration, then the same summary.
 
 Color is applied with raw ANSI when `useColor` is set (green pass / red fail /
@@ -49,7 +49,9 @@ render opts suiteResults =
         body =
             when opts.style is
                 Plain ->
-                    "Starting tests"
+                    suiteResults
+                        |> Array.map (suiteLine opts.useColor)
+                        |> String.join "\n"
 
                 Verbose ->
                     allResults
@@ -83,6 +85,30 @@ render opts suiteResults =
     ]
         |> Array.keepIf (\s -> s /= "")
         |> String.join "\n\n\n"
+
+
+suiteLine : Bool -> SuiteResult -> String
+suiteLine useColor sr =
+    let
+        { tag, col } =
+            if sr.suiteError /= Nothing || Array.any (\r -> isErrored r.outcome) sr.results then
+                { tag = "ERROR", col = yellow }
+
+            else if Array.any (\r -> isFailed r.outcome) sr.results then
+                { tag = "FAIL", col = red }
+
+            else
+                { tag = "ok", col = green }
+
+        durationMs =
+            Array.foldl (\r acc -> acc + r.durationMs) 0 sr.results
+    in
+    String.padRight 52 ' ' sr.name
+        ++ " "
+        ++ color useColor col (String.padRight 6 ' ' tag)
+        ++ "("
+        ++ String.fromInt durationMs
+        ++ " ms)"
 
 
 verboseLine : Bool -> TestResult -> String
