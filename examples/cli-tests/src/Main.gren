@@ -1,6 +1,6 @@
 module Main exposing ( main )
 
-{-| Example test executable built on `gren-unit`, porting a couple of the
+{-| Example test executable built on `gren-unit-node`, porting a couple of the
 black-box CLI tests that currently live in `gren-format/tests/test_cli.py`.
 
 Run it like a unittest binary:
@@ -94,7 +94,7 @@ inPlaceSuite perms =
         , tearDownSuite = U.noTearDown
         , setUp =
             \appPath ->
-                FileSystem.makeTempDirectory perms.fs "gren-unit"
+                FileSystem.makeTempDirectory perms.fs "gren-unit-node"
                     |> Task.map (\dir -> { appPath = appPath, dir = dir })
                     |> Task.mapError (\e -> "makeTempDirectory: " ++ Debug.toString e)
         , tearDown =
