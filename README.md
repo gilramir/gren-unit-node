@@ -114,7 +114,7 @@ node app --list          # print all qualified names, don't run
 
 When tests need files, processes, or other external state, use `setUp` and `tearDown`. They run before and after each test, and **`tearDown` is guaranteed to run even if the test fails**, so resources are always cleaned up.
 
-`U.Permissions` gives you `fs` (filesystem) and `childProcess` permissions. The framework acquires these for you and passes them to your suite builder — no `Init` wiring needed.
+`U.run` acquires `fs` (filesystem) and `childProcess` permissions and passes them to your suite builder as `U.Permissions` — no `Init` wiring needed. If you need a different set of permissions, see [Custom permissions](#custom-permissions) below.
 
 Here is a suite where each test gets a fresh temporary directory:
 
@@ -180,6 +180,46 @@ U.suite
 ### Error channel
 
 Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
+
+## Custom permissions
+
+`U.run` always gives you `fs + childProcess`. If your tests need something different — an HTTP client, a database connection, or nothing at all — use `U.runWith` and supply your own initialization step.
+
+The `init` field follows Gren's `Init.await` continuation style: you receive a `done` callback, initialize whatever you need, then call `done` with your permissions record:
+
+```gren
+main : Node.SimpleProgram a
+main =
+    U.runWith
+        { name = "my-tests"
+        , version = "1.0.0"
+        , init =
+            \done ->
+                Init.await HttpClient.initialize <| \http ->
+                    done { http = http }
+        , suites = \perms -> [ httpSuite perms ]
+        }
+```
+
+Your `suites` function receives whatever you passed to `done` — here `{ http : HttpClient.Permission }`.
+
+For no permissions at all:
+
+```gren
+init = \done -> done {}
+```
+
+You can also combine multiple initializations:
+
+```gren
+init =
+    \done ->
+        Init.await FileSystem.initialize <| \fs ->
+        Init.await HttpClient.initialize <| \http ->
+            done { fs = fs, http = http }
+```
+
+Note: `U.runWith` always acquires its own `FileSystem.Permission` internally for `--junit-xml` support, regardless of what you pass to `done`. If your tests also need filesystem access, acquire it separately in your `init` as shown above.
 
 ## Comparing output against a file
 
