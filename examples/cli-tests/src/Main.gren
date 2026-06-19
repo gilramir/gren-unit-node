@@ -28,16 +28,28 @@ import ChildProcess
 import Expect exposing (Expectation)
 import FileSystem
 import FileSystem.Path as Path exposing (Path)
+import Init
 import Node
 import Task exposing (Task)
 import Test.Unit as U
 
 
+type alias Perms =
+    { fs : FileSystem.Permission
+    , childProcess : ChildProcess.Permission
+    }
+
+
 main : Node.SimpleProgram a
 main =
-    U.run
+    U.runWith
         { name = "gren-format-cli-tests"
         , version = "1.0.0"
+        , init =
+            \done ->
+                Init.await FileSystem.initialize <| \fs ->
+                Init.await ChildProcess.initialize <| \cp ->
+                    done { fs = fs, childProcess = cp }
         , suites =
             \perms ->
                 [ showFlagSuite perms
@@ -50,7 +62,7 @@ main =
 -- SUITE 1: --show, no fixtures beyond the app path
 
 
-showFlagSuite : U.Permissions -> U.Suite
+showFlagSuite : Perms -> U.Suite
 showFlagSuite perms =
     U.suite
         { name = "ShowFlag"
@@ -86,7 +98,7 @@ type alias InPlaceFixture =
     }
 
 
-inPlaceSuite : U.Permissions -> U.Suite
+inPlaceSuite : Perms -> U.Suite
 inPlaceSuite perms =
     U.suite
         { name = "InPlace"
@@ -133,7 +145,7 @@ path. This matters because the in-place test runs the app with its working
 directory set to a temp dir — a relative app path would no longer resolve from
 there. `realPath` resolves against the process cwd up front.
 -}
-locateApp : U.Permissions -> Task String String
+locateApp : Perms -> Task String String
 locateApp perms =
     FileSystem.realPath perms.fs (Path.fromPosixString "../../../gren-format/app")
         |> Task.map Path.toPosixString
@@ -148,7 +160,7 @@ type alias RunResult =
 inspectable record — exactly the `Task.onError`-into-success idiom the existing
 effectful tests already use.
 -}
-runApp : U.Permissions -> String -> { cwd : Maybe String } -> Array String -> Task String RunResult
+runApp : Perms -> String -> { cwd : Maybe String } -> Array String -> Task String RunResult
 runApp perms appPath { cwd } args =
     let
         opts =
@@ -176,14 +188,14 @@ runApp perms appPath { cwd } args =
             )
 
 
-writeText : U.Permissions -> Path -> String -> Task String {}
+writeText : Perms -> Path -> String -> Task String {}
 writeText perms path text =
     FileSystem.writeFile perms.fs (Bytes.fromString text) path
         |> Task.map (\_ -> {})
         |> Task.mapError (\e -> "write " ++ Path.toPosixString path ++ ": " ++ Debug.toString e)
 
 
-readText : U.Permissions -> Path -> Task String String
+readText : Perms -> Path -> Task String String
 readText perms path =
     FileSystem.readFile perms.fs path
         |> Task.map bytesToString

@@ -65,7 +65,9 @@ mathSuite =
         }
 ```
 
-Each test body is a function from the test fixture (ignored here with `_`) to a `Task String Expectation`. Use the standard `Expect.*` functions from `gren-lang/test` for assertions — the same ones you already know.
+Each test body must return `Task String Expectation`. `Expect.equal 4 (2 + 2)` is a pure expression — no effects — so `Task.succeed` lifts it into the `Task` type the framework expects. Tests that do file I/O or spawn processes already return a `Task`, so they use `Task.map` to produce the `Expectation` at the end instead.
+
+Use the standard `Expect.*` functions from `gren-lang/test` for assertions — the same ones you already know.
 
 `U.run` requires no permissions. For tests that read files, spawn processes, or touch other external resources, use `U.runWith` — see below.
 
