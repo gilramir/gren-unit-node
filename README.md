@@ -181,6 +181,52 @@ U.suite
 
 Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
 
+## Comparing output against a file
+
+A common pattern is to keep expected output in a file under `testfiles/` and compare it against what your code produces. `FileSystem.readFile` returns a `Task`, so the comparison lives inside `Task.map`:
+
+```gren
+import Bytes
+import FileSystem
+import FileSystem.Path as Path
+import Task
+import Expect
+import Test.Unit as U
+
+
+goldenSuite : U.Permissions -> U.Suite
+goldenSuite perms =
+    U.suite
+        { name = "Golden"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = U.noFixture
+        , tearDown = U.noTearDown
+        , tests =
+            [ U.test "render matches expected output" <| \_ ->
+                let
+                    expectedFile =
+                        Path.fromPosixString "testfiles/expected-output.txt"
+                in
+                FileSystem.readFile perms.fs expectedFile
+                    |> Task.mapError (\e -> "could not read expected file: " ++ Debug.toString e)
+                    |> Task.map
+                        (\bytes ->
+                            let
+                                expected =
+                                    Bytes.toString bytes |> Maybe.withDefault ""
+
+                                actual =
+                                    myRenderFunction someInput
+                            in
+                            Expect.equal expected actual
+                        )
+            ]
+        }
+```
+
+`Bytes.toString` returns a `Maybe String` because not all byte sequences are valid UTF-8; `Maybe.withDefault ""` is fine for text fixture files. `myRenderFunction` is whatever pure function you are testing — no effects needed on that side, so it just goes in the `let`.
+
 ## What happens when things go wrong
 
 | Situation | Result |
