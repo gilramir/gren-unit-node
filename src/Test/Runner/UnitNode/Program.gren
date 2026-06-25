@@ -161,7 +161,7 @@ stringParser =
     }
 
 
-onCommand : (perms -> Array Suite) -> (perms -> Task String {}) -> (perms -> Task String {}) -> Node.Environment -> Context perms -> Flags -> Task String Program.Outcome
+onCommand : (perms -> Array Suite) -> (perms -> Task String {}) -> (perms -> Task String {}) -> Node.Environment -> Context perms -> Flags -> Task Program.Failure {}
 onCommand buildSuites globalSetUp globalTearDown env ctx flags =
     let
         suites =
@@ -172,11 +172,11 @@ onCommand buildSuites globalSetUp globalTearDown env ctx flags =
     in
     if flags.list then
         listTests env suites
-            |> Task.map (\_ -> Program.Succeeded)
+            |> Task.map (\_ -> {})
 
     else
         globalSetUp ctx.perms
-            |> Task.mapError (\e -> "globalSetUp: " ++ e)
+            |> Task.mapError (\e -> Program.ExitMessage ("globalSetUp: " ++ e))
             |> Task.andThen
                 (\_ ->
                     runAll suites selection
@@ -184,12 +184,13 @@ onCommand buildSuites globalSetUp globalTearDown env ctx flags =
                         |> Task.andThen
                             (\suiteResults ->
                                 reportAndWrite env ctx flags suiteResults
+                                    |> Task.mapError Program.ExitMessage
                                     |> Task.andThen
                                         (\_ ->
                                             globalTearDown ctx.perms
-                                                |> Task.mapError (\e -> "globalTearDown: " ++ e)
+                                                |> Task.mapError (\e -> Program.ExitMessage ("globalTearDown: " ++ e))
                                         )
-                                    |> Task.map (\_ -> outcomeFor suiteResults)
+                                    |> Task.andThen (\_ -> outcomeFor suiteResults)
                             )
                 )
 
@@ -256,7 +257,7 @@ listTests env suites =
         |> Stream.Log.line env.stdout
 
 
-outcomeFor : Array SuiteResult -> Program.Outcome
+outcomeFor : Array SuiteResult -> Task Program.Failure {}
 outcomeFor suiteResults =
     let
         anyBad =
@@ -268,10 +269,10 @@ outcomeFor suiteResults =
                 suiteResults
     in
     if anyBad then
-        Program.Failed
+        Task.fail Program.ExitFailure
 
     else
-        Program.Succeeded
+        Task.succeed {}
 
 
 bytesOf : String -> Bytes
