@@ -2,6 +2,11 @@ module Test.Runner.UnitNode.Glob exposing ( matches )
 
 {-| A tiny shell-style glob, enough to select tests by name on the CLI.
 
+@docs matches
+-}
+
+{-|
+
 * `*` matches any run of characters (including none)
 * `?` matches exactly one character
 * everything else is literal

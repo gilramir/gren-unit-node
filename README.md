@@ -1,10 +1,12 @@
 # gren-unit-node
 
-A test framework for Gren Node applications. Write your tests in Gren, run them from the command line, and get a clear pass/fail report with per-suite timing (or per-test timing with `-v`).
+A test framework for Gren Node applications. Write your tests in Gren, orgranizing them into
+test suites. Run them from the command line and get a pass/fail report with per-suite timing,
+or per-test timing with `-v`.
 
 ## Setup
 
-Create a `tests/` application directory alongside your package or application. Add `gilramir/gren-unit-node` as a dependency in `tests/gren.json`:
+Create a `tests/` application directory alongside your package or application. Add `gilramir/gren-unit-node` as a dependency in `tests/gren.json`. For example:
 
 ```json
 {
@@ -28,7 +30,7 @@ Create a `tests/` application directory alongside your package or application. A
 
 ## Your first test
 
-Create `tests/src/Main.gren`. The only required pieces are a `U.run` call in `main` and at least one suite containing named tests:
+Create `tests/src/Main.gren`. The only required pieces are a `U.run` call in `main` and at least one suite containing the tests:
 
 ```gren
 module Main exposing (main)
@@ -65,19 +67,31 @@ mathSuite =
         }
 ```
 
-Each test body must return `Task String Expectation`. `Expect.equal 4 (2 + 2)` is a pure expression — no effects — so `Task.succeed` lifts it into the `Task` type the framework expects. Tests that do file I/O or spawn processes already return a `Task`, so they use `Task.map` to produce the `Expectation` at the end instead.
+Each test body must return `Task String Expectation`.
+`Expect.equal 4 (2 + 2)` is a pure expression — no effects — so `Task.succeed`
+fits it into the `Task` type the framework expects.
+Tests that do file I/O or spawn processes already return a `Task`,
+so they use `Task.map` to produce the `Expectation` at the end instead.
 
-Use the standard `Expect.*` functions from `gren-lang/test` for assertions — the same ones you already know.
+Use the standard `Expect.*` functions from `gren-lang/test` for assertions.
 
 `U.run` requires no permissions. For tests that read files, spawn processes, or touch other external resources, use `U.runWith` — see below.
 
 ## Build and run
 
+To run the tests, you can compile your test application and run it.
 ```bash
-gren make src/Main.gren --output=app
+gren make Main --output=app
 node app
 ```
 
+or just have gren run it:
+```
+gren run Main
+```
+
+The output shows the test suites that were run, the result, the number of
+tests passed out of the total number of tests, and the execution duration.
 ```
 Math                                     ok    2/2    (12 ms)
 
@@ -87,12 +101,14 @@ Ran 2 tests in 12 ms
 OK — 2 passed
 ```
 
-Add `-v` for a line per test:
+Add `-v` for a line per test. Here, "gren run" cannot be used as it cannot
+handle the additional options to the node application.
 
 ```bash
 node app -v
 ```
 
+Here you see the status and execution duration of each individual test.
 ```
 Math.addition                            ok    (6 ms)
 Math.subtraction                         ok    (6 ms)
@@ -105,12 +121,16 @@ OK — 2 passed
 
 ## Selecting tests
 
-Pass one or more glob patterns to run only matching tests. Test names are fully-qualified as `Suite.test`:
+If you want to run one or more tests, but not **all** the tests,
+pass one or more glob patterns on the command-line.
+Test names are fully-qualified as `Suite.test`. Most likely you will
+want to esacpe the glob patterns with single-quotes to avoid your shell from
+expanding them, looking for files.
 
 ```bash
 node app 'Math.*'        # every test in the Math suite
 node app '*addition*'    # any test whose name contains "addition"
-node app 'A.*' 'B.*'    # multiple patterns are a union
+node app 'A.*' 'B.*'     # multiple patterns are a union
 node app --list          # print all qualified names, don't run
 ```
 
