@@ -7,14 +7,16 @@ module Test.Runner.UnitNode.Glob exposing ( matches )
 
 {-|
 
-* `*` matches any run of characters (including none)
+* `*` matches zero or more characters
 * `?` matches exactly one character
 * everything else is literal
 
-    matches "Format.*"        "Format.imports"     --> True
-    matches "*in place*"      "writes file in place" --> True
-    matches "Format.?mports"  "Format.imports"     --> True
-    matches "Format.x"        "Format.imports"     --> False
+```
+matches "Format.*"        "Format.imports"       --> True
+matches "*in place*"      "writes file in place" --> True
+matches "Format.?mports"  "Format.imports"       --> True
+matches "Format.x"        "Format.imports"       --> False
+```
 
 Matching is whole-string (anchored at both ends); wrap a pattern in `*…*` for a
 substring search. Implemented as a classic two-cursor backtracking matcher over

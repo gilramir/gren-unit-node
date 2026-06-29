@@ -13,15 +13,14 @@ module Test.Runner.UnitNode exposing
 
 {-| An xUnit / Python-`unittest`-style test framework for Gren.
 
-Unlike the stock effectful runner, this one owns its execution loop, which is
-what buys the four things `unittest` users expect:
+This test runner has:
 
 1. **Suite- and test-level fixtures** with `setUpSuite`/`tearDownSuite` (once
    per group) and `setUp`/`tearDown` (once per test) — see [suite](#suite).
 2. **Lifecycle failures are first-class**: a thrown `setUp`/`tearDown` becomes a
    recorded error, never a silent skip or a crash.
 3. **CLI selection** by name or glob, **verbose** per-test timing, and
-   **JUnit XML** output — all in [run](#run), via `gilramir/gren-argparse`.
+   **JUnit XML** output — all in [run](#run).
 
 @docs Suite, Test, Outcome
 @docs suite, test

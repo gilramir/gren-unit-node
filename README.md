@@ -4,7 +4,7 @@ A test framework for Gren Node applications. Write your tests in Gren, orgranizi
 test suites. Run them from the command line and get a pass/fail report with per-suite timing,
 or per-test timing with `-v`.
 
-**Example output: see a per-suite summary***
+**Example output: run all tests and see a per-suite summary**
 ```
 % node app
 
@@ -20,7 +20,7 @@ Ran 117 tests in 1473 ms
 OK — 117 passed
 ```
 
-**Example output: see a per-test details for just one suite***
+**Example output: run one suite and see per-test details**
 ```
 $ node app -v 'Declarations.*'
 
