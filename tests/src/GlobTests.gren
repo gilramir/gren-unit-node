@@ -1,0 +1,72 @@
+module GlobTests exposing ( suite )
+
+import Test.Runner.UnitNode as U
+import Test.Runner.UnitNode.Glob as Glob
+import Expect
+import Task
+
+
+suite : U.Suite
+suite =
+    U.suite
+        { name = "Glob"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = U.noFixture
+        , tearDown = U.noTearDown
+        , tests =
+            [ U.test "literal match" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "foo" "foo"))
+
+            , U.test "literal no-match" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "foo" "bar"))
+
+            , U.test "star matches suffix" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "Foo.*" "Foo.bar"))
+
+            , U.test "star is anchored at both ends" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "Foo" "Foobar"))
+
+            , U.test "question mark matches exactly one character" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "F?o" "Foo"))
+
+            , U.test "question mark does not match zero characters" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "F?o" "Fo"))
+
+            , U.test "question mark does not match two characters" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "F?o" "Fbbo"))
+
+            , U.test "empty pattern matches empty string" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "" ""))
+
+            , U.test "empty pattern does not match non-empty string" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "" "x"))
+
+            , U.test "star-only matches anything" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "*" "anything at all"))
+
+            , U.test "star-only matches empty string" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "*" ""))
+
+            , U.test "double star matches anything" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "**" "anything"))
+
+            , U.test "backtracking: star then literal" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "*b" "aab"))
+
+            , U.test "qualified name matches correct suite" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "Suite.*" "Suite.test name"))
+
+            , U.test "qualified name does not match wrong suite" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "Other.*" "Suite.test name"))
+
+            , U.test "substring search with surrounding stars" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "*in place*" "writes file in place"))
+
+            , U.test "trailing star after literal" <| \_ ->
+                Task.succeed (Expect.equal True (Glob.matches "pre*" "prefix"))
+
+            , U.test "trailing star does not match when prefix is wrong" <| \_ ->
+                Task.succeed (Expect.equal False (Glob.matches "pre*" "notpre"))
+            ]
+        }

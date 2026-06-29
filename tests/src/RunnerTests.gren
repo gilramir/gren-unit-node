@@ -1,0 +1,449 @@
+module RunnerTests exposing ( lifecycleSuite, selectionSuite )
+
+import Test.Runner.UnitNode as U
+import Test.Runner.UnitNode.Testing as T
+import Expect exposing ( Expectation )
+import Task exposing ( Task )
+
+
+{-| Run an inner suite with all tests selected, then assert on its result.
+-}
+runAndCheck : U.Suite -> (T.SuiteResult -> Expectation) -> Task String Expectation
+runAndCheck inner check =
+    T.runSuite inner
+        |> Task.map check
+
+
+lifecycleSuite : U.Suite
+lifecycleSuite =
+    U.suite
+        { name = "Runner.Lifecycle"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = U.noFixture
+        , tearDown = U.noTearDown
+        , tests =
+
+            [ U.test "passing test gives Passed outcome" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "ok" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            Expect.equal T.Passed r.outcome
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "failed assertion gives Failed outcome" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "bad" <| \_ -> Task.succeed (Expect.equal 1 2) ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            when r.outcome is
+                                T.Failed _ ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "expected Failed outcome"
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "task error in body gives Errored with the error string" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "throws" <| \_ -> Task.fail "boom" ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            Expect.equal (T.Errored "boom") r.outcome
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "setUp failure gives Errored with setUp: prefix" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = \_ -> Task.fail "setUp blew up"
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "unreachable" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            when r.outcome is
+                                T.Errored msg ->
+                                    Expect.equal True (String.startsWith "setUp:" msg)
+
+                                _ ->
+                                    Expect.fail "expected Errored outcome"
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "tearDown failure on passing test gives Errored with tearDown: prefix" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = \_ -> Task.fail "cleanup failed"
+                            , tests = [ U.test "passes" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            when r.outcome is
+                                T.Errored msg ->
+                                    Expect.equal True (String.startsWith "tearDown:" msg)
+
+                                _ ->
+                                    Expect.fail "expected Errored outcome (tearDown ran)"
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "tearDown failure does not bury original Failed" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = \_ -> Task.fail "cleanup noise"
+                            , tests = [ U.test "fails assertion" <| \_ -> Task.succeed (Expect.equal 1 2) ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            when r.outcome is
+                                T.Failed _ ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "original Failed should win over tearDown error"
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "tearDown failure does not bury original Errored" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = \_ -> Task.fail "cleanup noise"
+                            , tests = [ U.test "errors" <| \_ -> Task.fail "body error" ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            Expect.equal (T.Errored "body error") r.outcome
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+
+            , U.test "setUpSuite failure marks every test Errored" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = Task.fail "suite setup exploded"
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests =
+                                [ U.test "a" <| \_ -> Task.succeed Expect.pass
+                                , U.test "b" <| \_ -> Task.succeed Expect.pass
+                                ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    Expect.all
+                        [ \_ ->
+                            Expect.equal 2 (Array.length sr.results)
+                        , \_ ->
+                            sr.results
+                                |> Array.all
+                                    (\r ->
+                                        when r.outcome is
+                                            T.Errored _ ->
+                                                True
+
+                                            _ ->
+                                                False)
+                                |> Expect.equal True
+                        , \_ ->
+                            Expect.notEqual Nothing sr.suiteError
+                        ]
+                        {}
+
+            , U.test "setUpSuite failure sets suiteError with setUpSuite prefix" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = Task.fail "suite setup exploded"
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "a" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when sr.suiteError is
+                        Just msg ->
+                            Expect.equal True (String.startsWith "setUpSuite:" msg)
+
+                        Nothing ->
+                            Expect.fail "expected suiteError to be set"
+
+            , U.test "tearDownSuite failure sets suiteError, test results preserved" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = \_ -> Task.fail "teardown boom"
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "passes" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    Expect.all
+                        [ \_ ->
+                            Expect.equal 1 (Array.length sr.results)
+                        , \_ ->
+                            when Array.get 0 sr.results is
+                                Just r ->
+                                    Expect.equal T.Passed r.outcome
+
+                                Nothing ->
+                                    Expect.fail "expected one result"
+                        , \_ ->
+                            when sr.suiteError is
+                                Just msg ->
+                                    Expect.equal True (String.startsWith "tearDownSuite:" msg)
+
+                                Nothing ->
+                                    Expect.fail "expected suiteError to be set"
+                        ]
+                        {}
+
+            , U.test "tests run in declaration order" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests =
+                                [ U.test "first" <| \_ -> Task.succeed Expect.pass
+                                , U.test "second" <| \_ -> Task.succeed Expect.pass
+                                , U.test "third" <| \_ -> Task.succeed Expect.pass
+                                ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    Expect.equal
+                        [ "first", "second", "third" ]
+                        (Array.map (\r -> r.name) sr.results)
+
+            , U.test "result carries suite name" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "MySuite"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "t" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    Expect.equal "MySuite" sr.name
+
+            , U.test "fixture value flows from setUp to body and tearDown" <| \_ ->
+                -- setUp produces 42; body checks it arrived; tearDown checks it too
+                -- (tearDown failure would surface as Errored, catching a bad value)
+                let
+                    inner =
+                        U.suite
+                            { name = "Inner"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = \_ -> Task.succeed 42
+                            , tearDown =
+                                \n ->
+                                    if n == 42 then
+                                        Task.succeed {}
+                                    else
+                                        Task.fail "tearDown got wrong fixture"
+                            , tests =
+                                [ U.test "fixture" <| \n ->
+                                    Task.succeed (Expect.equal 42 n)
+                                ]
+                            }
+                in
+                runAndCheck inner <| \sr ->
+                    when Array.get 0 sr.results is
+                        Just r ->
+                            Expect.equal T.Passed r.outcome
+
+                        Nothing ->
+                            Expect.fail "expected one result"
+            ]
+        }
+
+
+selectionSuite : U.Suite
+selectionSuite =
+    U.suite
+        { name = "Runner.Selection"
+        , setUpSuite = U.noSuiteFixture
+        , tearDownSuite = U.noTearDown
+        , setUp = U.noFixture
+        , tearDown = U.noTearDown
+        , tests =
+
+            [ U.test "unfiltered run selects all tests" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "S"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests =
+                                [ U.test "a" <| \_ -> Task.succeed Expect.pass
+                                , U.test "b" <| \_ -> Task.succeed Expect.pass
+                                ]
+                            }
+                in
+                T.runSuite inner
+                    |> Task.map (\sr -> Expect.equal 2 (Array.length sr.results))
+
+            , U.test "deselected tests produce no results" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "S"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests =
+                                [ U.test "selected" <| \_ -> Task.succeed Expect.pass
+                                , U.test "skipped" <| \_ -> Task.succeed (Expect.fail "should not run")
+                                ]
+                            }
+                in
+                T.runSuiteFiltered (\name -> name == "S.selected") inner
+                    |> Task.map
+                        (\sr ->
+                            Expect.all
+                                [ \_ -> Expect.equal 1 (Array.length sr.results)
+                                , \_ ->
+                                    when Array.get 0 sr.results is
+                                        Just r ->
+                                            Expect.equal "selected" r.name
+
+                                        Nothing ->
+                                            Expect.fail "expected one result"
+                                ]
+                                {})
+
+            , U.test "fully deselected suite skips setUpSuite" <| \_ ->
+                -- setUpSuite would fail if it ran; the empty-selection short-circuit prevents it
+                let
+                    inner =
+                        U.suite
+                            { name = "S"
+                            , setUpSuite = Task.fail "setUpSuite should not run"
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests = [ U.test "any" <| \_ -> Task.succeed Expect.pass ]
+                            }
+                in
+                T.runSuiteFiltered (\_ -> False) inner
+                    |> Task.map
+                        (\sr ->
+                            Expect.all
+                                [ \_ -> Expect.equal 0 (Array.length sr.results)
+                                , \_ -> Expect.equal Nothing sr.suiteError
+                                ]
+                                {})
+
+            , U.test "selection uses fully-qualified SuiteName.testName" <| \_ ->
+                let
+                    inner =
+                        U.suite
+                            { name = "MySuite"
+                            , setUpSuite = U.noSuiteFixture
+                            , tearDownSuite = U.noTearDown
+                            , setUp = U.noFixture
+                            , tearDown = U.noTearDown
+                            , tests =
+                                [ U.test "alpha" <| \_ -> Task.succeed Expect.pass
+                                , U.test "beta" <| \_ -> Task.succeed Expect.pass
+                                ]
+                            }
+                in
+                T.runSuiteFiltered (\name -> name == "MySuite.beta") inner
+                    |> Task.map
+                        (\sr ->
+                            when Array.get 0 sr.results is
+                                Just r ->
+                                    Expect.equal "beta" r.name
+
+                                Nothing ->
+                                    Expect.fail "expected one result")
+            ]
+        }

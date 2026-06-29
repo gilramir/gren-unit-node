@@ -12,6 +12,10 @@
       "examples": [
         "cd examples/cli-test",
         "gren make Main --output=app"
+      ],
+      "test": [
+        "cd tests/",
+        "gren run Main"
       ]
     }
   }

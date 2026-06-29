@@ -1,0 +1,90 @@
+module Test.Runner.UnitNode.Testing exposing
+    ( Outcome(..)
+    , TestResult
+    , SuiteResult
+    , runSuite
+    , runSuiteFiltered
+    )
+
+{-| White-box testing utilities for gren-unit-node itself.
+
+Exposes just enough internals to run a `Suite` programmatically and inspect
+its `SuiteResult` — enabling the self-test suite in `tests/`. Not intended
+for use outside this package.
+-}
+
+import Task exposing ( Task )
+import Test.Runner.UnitNode.Internal as I
+
+
+{-| A test's outcome with constructors exposed for pattern matching.
+Mirrors `Test.Runner.UnitNode.Outcome` exactly.
+-}
+type Outcome
+    = Passed
+    | Failed String
+    | Errored String
+
+
+type alias TestResult =
+    { suiteName : String
+    , name : String
+    , outcome : Outcome
+    , durationMs : Int
+    }
+
+
+type alias SuiteResult =
+    { name : String
+    , results : Array TestResult
+    , suiteError : Maybe String
+    }
+
+
+{-| Run a suite with all tests selected, returning the result record.
+-}
+runSuite : I.Suite -> Task String SuiteResult
+runSuite (I.Suite s) =
+    s.run { isSelected = \_ -> True }
+        |> Task.map convertSuiteResult
+        |> Task.mapError (\_ -> "unreachable")
+
+
+{-| Run a suite with a custom name predicate, for testing selection behaviour.
+The predicate receives fully-qualified names (`"SuiteName.testName"`).
+-}
+runSuiteFiltered : (String -> Bool) -> I.Suite -> Task String SuiteResult
+runSuiteFiltered isSelected (I.Suite s) =
+    s.run { isSelected = isSelected }
+        |> Task.map convertSuiteResult
+        |> Task.mapError (\_ -> "unreachable")
+
+
+convertSuiteResult : I.SuiteResult -> SuiteResult
+convertSuiteResult sr =
+    { name = sr.name
+    , results = Array.map convertTestResult sr.results
+    , suiteError = sr.suiteError
+    }
+
+
+convertTestResult : I.TestResult -> TestResult
+convertTestResult r =
+    { suiteName = r.suiteName
+    , name = r.name
+    , outcome = convertOutcome r.outcome
+    , durationMs = r.durationMs
+    }
+
+
+convertOutcome : I.Outcome -> Outcome
+convertOutcome o =
+    when o is
+        I.Passed ->
+            Passed
+
+        I.Failed m ->
+            Failed m
+
+        I.Errored m ->
+            Errored m

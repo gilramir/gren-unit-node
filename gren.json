@@ -7,7 +7,8 @@
     "version": "1.0.0",
     "exposed-modules": [
         "Test.Runner.UnitNode",
-        "Test.Runner.UnitNode.Glob"
+        "Test.Runner.UnitNode.Glob",
+        "Test.Runner.UnitNode.Testing"
     ],
     "gren-version": "0.6.0 <= v < 0.7.0",
     "dependencies": {
