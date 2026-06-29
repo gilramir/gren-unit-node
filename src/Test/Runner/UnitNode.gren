@@ -1,8 +1,14 @@
 module Test.Runner.UnitNode exposing
-    ( Suite, Test, Outcome
-    , suite, test
-    , noSuiteFixture, noFixture, noTearDown
-    , run, runWith
+    ( Suite
+    , Test
+    , Outcome
+    , suite
+    , test
+    , noSuiteFixture
+    , noFixture
+    , noTearDown
+    , run
+    , runWith
     )
 
 {-| An xUnit / Python-`unittest`-style test framework for Gren.
@@ -65,8 +71,8 @@ mangling them through `Debug.toString`.
 
 import Init
 import Node
-import Task exposing (Task)
-import Expect exposing (Expectation)
+import Task exposing ( Task )
+import Expect exposing ( Expectation )
 import Test.Runner.UnitNode.Internal as I
 import Test.Runner.UnitNode.Program as P
 import Test.Runner.UnitNode.Runner as Runner
@@ -83,8 +89,7 @@ Build one with [test](#test). Within a `suite` call, every `test` must share the
 same fixture type (it's whatever that suite's `setUp` produces).
 -}
 type Test testFix
-    = Test
-        { name : String
+    = Test { name : String
         , body : testFix -> Task String Expectation
         }
 
@@ -135,17 +140,16 @@ suite cfg =
     I.Suite
         { name = cfg.name
         , testNames = testNames
-        , run =
-            \selection ->
-                Runner.runSuite
-                    { name = cfg.name
-                    , setUpSuite = cfg.setUpSuite
-                    , tearDownSuite = cfg.tearDownSuite
-                    , setUp = cfg.setUp
-                    , tearDown = cfg.tearDown
-                    , tests = unwrapped
-                    , selection = selection
-                    }
+        , run = \selection ->
+            Runner.runSuite
+                { name = cfg.name
+                , setUpSuite = cfg.setUpSuite
+                , tearDownSuite = cfg.tearDownSuite
+                , setUp = cfg.setUp
+                , tearDown = cfg.tearDown
+                , tests = unwrapped
+                , selection = selection
+                }
         }
 
 

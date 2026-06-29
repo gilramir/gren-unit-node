@@ -25,16 +25,16 @@ diagnostic on stderr, exactly the Unix split `Argparse.Program` already bakes in
 import Argparse.Parser as AP
 import Argparse.PrettyPrinter as PP
 import Argparse.Program as Program
-import Bytes exposing (Bytes)
+import Bytes exposing ( Bytes )
 import Dict
 import FileSystem
-import FileSystem.Path as Path exposing (Path)
+import FileSystem.Path as Path exposing ( Path )
 import Init
 import Node
 import Stream.Log
-import Task exposing (Task)
+import Task exposing ( Task )
 import Terminal
-import Test.Runner.UnitNode.Internal as I exposing (Suite(..), SuiteResult, Selection)
+import Test.Runner.UnitNode.Internal as I exposing ( Suite(..), SuiteResult, Selection )
 import Test.Runner.UnitNode.JUnit as JUnit
 import Test.Runner.UnitNode.Glob as Glob
 import Test.Runner.UnitNode.Report as Report
@@ -115,17 +115,16 @@ runWith userConfig =
         { name = userConfig.name
         , version = userConfig.version
         , command = command
-        , init =
-            \_env toProgram ->
-                Init.await FileSystem.initialize <| \fs ->
+        , init = \_env toProgram ->
+            Init.await FileSystem.initialize <| \fs ->
                 Init.await Terminal.initialize <| \termConfig ->
-                Init.awaitTask Node.getEnvironmentVariables <| \envVars ->
-                    userConfig.init <| \userPerms ->
-                        toProgram
-                            { perms = userPerms
-                            , fs = fs
-                            , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
-                            }
+                    Init.awaitTask Node.getEnvironmentVariables <| \envVars ->
+                        userConfig.init <| \userPerms ->
+                            toProgram
+                                { perms = userPerms
+                                , fs = fs
+                                , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
+                                }
         , onCommand = onCommand userConfig.suites userConfig.globalSetUp userConfig.globalTearDown
         }
 
@@ -133,16 +132,13 @@ runWith userConfig =
 command : AP.Command (Array String) Flags Flags
 command =
     { word = ""
-    , arguments =
-        AP.zeroOrMoreArgs
+    , arguments = AP.zeroOrMoreArgs
             { value = stringParser
             , help = "Glob pattern(s) selecting tests by qualified name (Suite.test). Omit to run all."
             }
-    , flags =
-        AP.initFlags
+    , flags = AP.initFlags
             (\verbose list junitXml ->
-                { patterns = [], verbose = verbose, list = list, junitXml = junitXml }
-            )
+                { patterns = [], verbose = verbose, list = list, junitXml = junitXml })
             |> AP.toggle (AP.Both { long = "verbose", short = "v" }) "Show per-test status and execution time"
             |> AP.toggle (AP.Both { long = "list", short = "l" }) "List every test's qualified name and exit"
             |> AP.flag (AP.LongOnly "junit-xml") AP.pathParser "Write JUnit XML results to the given path"
@@ -177,34 +173,26 @@ onCommand buildSuites globalSetUp globalTearDown env ctx flags =
     else
         globalSetUp ctx.perms
             |> Task.mapError (\e -> Program.ExitMessage ("globalSetUp: " ++ e))
-            |> Task.andThen
-                (\_ ->
+            |> Task.andThen (\_ ->
                     runAll suites selection
                         |> Task.onError never
-                        |> Task.andThen
-                            (\suiteResults ->
+                        |> Task.andThen (\suiteResults ->
                                 reportAndWrite env ctx flags suiteResults
                                     |> Task.mapError Program.ExitMessage
-                                    |> Task.andThen
-                                        (\_ ->
+                                    |> Task.andThen (\_ ->
                                             globalTearDown ctx.perms
-                                                |> Task.mapError (\e -> Program.ExitMessage ("globalTearDown: " ++ e))
-                                        )
-                                    |> Task.andThen (\_ -> outcomeFor suiteResults)
-                            )
-                )
+                                                |> Task.mapError (\e -> Program.ExitMessage ("globalTearDown: " ++ e)))
+                                    |> Task.andThen (\_ -> outcomeFor suiteResults)))
 
 
 selectionFrom : Array String -> Selection
 selectionFrom patterns =
-    { isSelected =
-        \fullName ->
-            if Array.isEmpty patterns then
-                True
+    { isSelected = \fullName ->
+        if Array.isEmpty patterns then
+            True
 
-            else
-                Array.any (\p -> Glob.matches p fullName) patterns
-    }
+        else
+            Array.any (\p -> Glob.matches p fullName) patterns }
 
 
 runAll : Array Suite -> Selection -> Task Never (Array SuiteResult)
@@ -212,12 +200,9 @@ runAll suites selection =
     Array.foldl
         (\(Suite s) acc ->
             acc
-                |> Task.andThen
-                    (\soFar ->
+                |> Task.andThen (\soFar ->
                         s.run selection
-                            |> Task.map (\r -> Array.pushLast r soFar)
-                    )
-        )
+                            |> Task.map (\r -> Array.pushLast r soFar)))
         (Task.succeed [])
         suites
 
@@ -236,8 +221,7 @@ reportAndWrite env ctx flags suiteResults =
             Report.render { style = style, useColor = ctx.useColor } suiteResults
     in
     Stream.Log.line env.stdout reportText
-        |> Task.andThen
-            (\_ ->
+        |> Task.andThen (\_ ->
                 when flags.junitXml is
                     Just path ->
                         FileSystem.writeFile ctx.fs (bytesOf (JUnit.toXmlString suiteResults)) path
@@ -245,8 +229,7 @@ reportAndWrite env ctx flags suiteResults =
                             |> Task.mapError (\e -> "could not write JUnit XML: " ++ Debug.toString e)
 
                     Nothing ->
-                        Task.succeed {}
-            )
+                        Task.succeed {})
 
 
 listTests : Node.Environment -> Array Suite -> Task x {}
@@ -264,8 +247,7 @@ outcomeFor suiteResults =
             Array.any
                 (\sr ->
                     sr.suiteError /= Nothing
-                        || Array.any (\r -> I.outcomeIsBad r.outcome) sr.results
-                )
+                        || Array.any (\r -> I.outcomeIsBad r.outcome) sr.results)
                 suiteResults
     in
     if anyBad then

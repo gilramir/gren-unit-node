@@ -18,12 +18,13 @@ and text values are XML-escaped. This is pure string building over the same
 caller does the `FileSystem.writeFile`.
 -}
 
-import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
+import Test.Runner.UnitNode.Internal as I exposing ( Outcome(..), SuiteResult, TestResult )
 
 
 toXmlString : Array SuiteResult -> String
 toXmlString suiteResults =
-    String.join "\n"
+    String.join
+        "\n"
         [ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         , "<testsuites>"
         , suiteResults |> Array.map suiteXml |> String.join "\n"
@@ -55,7 +56,8 @@ suiteXml sr =
                 |> Array.foldl (\r acc -> acc + r.durationMs) 0
                 |> secondsString
     in
-    String.join "\n"
+    String.join
+        "\n"
         [ "  <testsuite name=\""
             ++ escape sr.name
             ++ "\" tests=\""
@@ -112,15 +114,12 @@ suiteErrorXml maybeErr =
 countWhere : (Outcome -> Bool) -> Array TestResult -> Int
 countWhere pred results =
     results
-        |> Array.foldl
-            (\r acc ->
+        |> Array.foldl (\r acc ->
                 if pred r.outcome then
                     acc + 1
 
                 else
-                    acc
-            )
-            0
+                    acc) 0
 
 
 secondsString : Int -> String

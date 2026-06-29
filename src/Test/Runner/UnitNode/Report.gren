@@ -18,7 +18,7 @@ interleaving `Stream.Log.line` calls inside the runner loop instead; the data
 model already supports it, it's purely a presentation choice deferred for v1.
 -}
 
-import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
+import Test.Runner.UnitNode.Internal as I exposing ( Outcome(..), SuiteResult, TestResult )
 
 
 type Style
@@ -35,16 +35,13 @@ render opts suiteResults =
 
         suiteErrors =
             suiteResults
-                |> Array.foldl
-                    (\sr acc ->
+                |> Array.foldl (\sr acc ->
                         when sr.suiteError is
                             Just e ->
                                 Array.pushLast (sr.name ++ ": " ++ e) acc
 
                             Nothing ->
-                                acc
-                    )
-                    []
+                                acc) []
 
         body =
             when opts.style is
@@ -74,8 +71,7 @@ render opts suiteResults =
     , detailBlock "FAIL" failures
     , detailBlock "ERROR" errors
     , suiteErrorBlock suiteErrors
-    , summaryLine
-        { total = Array.length allResults
+    , summaryLine { total = Array.length allResults
         , passed = Array.length passed
         , failures = Array.length failures
         , errors = Array.length errors + Array.length suiteErrors
@@ -104,7 +100,11 @@ suiteLine useColor sr =
             Array.length sr.results
 
         passed =
-            sr.results |> Array.foldl (\r acc -> if isFailed r.outcome || isErrored r.outcome then acc else acc + 1) 0
+            sr.results |> Array.foldl (\r acc -> if isFailed r.outcome || isErrored r.outcome then
+                            acc
+
+                        else
+                            acc + 1) 0
 
         durationMs =
             Array.foldl (\r acc -> acc + r.durationMs) 0 sr.results
@@ -153,10 +153,8 @@ detailBlock label results =
 
     else
         results
-            |> Array.map
-                (\r ->
-                    "=== " ++ label ++ ": " ++ r.suiteName ++ "." ++ r.name ++ " ===\n" ++ messageOf r.outcome
-                )
+            |> Array.map (\r ->
+                    "=== " ++ label ++ ": " ++ r.suiteName ++ "." ++ r.name ++ " ===\n" ++ messageOf r.outcome)
             |> String.join "\n\n"
 
 
@@ -183,15 +181,16 @@ summaryLine s =
     else
         ran
             ++ "\n\n"
-            ++ color s.useColor red
+            ++ color
+                s.useColor
+                red
                 ("FAILED — "
                     ++ String.fromInt s.passed
                     ++ " passed, "
                     ++ String.fromInt s.failures
                     ++ " failed, "
                     ++ String.fromInt s.errors
-                    ++ " errored"
-                )
+                    ++ " errored")
 
 
 messageOf : Outcome -> String
@@ -226,15 +225,13 @@ isErrored outcome =
         _ ->
             False
 
-
-
 -- ANSI
 
 
 color : Bool -> String -> String -> String
 color useColor code text =
     if useColor then
-        code ++ text ++ "\u{001B}[0m"
+        code ++ text ++ "\u{001b}[0m"
 
     else
         text
@@ -242,14 +239,14 @@ color useColor code text =
 
 green : String
 green =
-    "\u{001B}[32m"
+    "\u{001b}[32m"
 
 
 red : String
 red =
-    "\u{001B}[31m"
+    "\u{001b}[31m"
 
 
 yellow : String
 yellow =
-    "\u{001B}[33m"
+    "\u{001b}[33m"

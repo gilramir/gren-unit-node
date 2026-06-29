@@ -29,10 +29,10 @@ responsible for rendering their own effect errors to text, which also sidesteps
 the `Debug.toString` mangling that bites the stock effectful runner.
 -}
 
-import Task exposing (Task)
-import Expect exposing (Expectation)
+import Task exposing ( Task )
+import Expect exposing ( Expectation )
 import Test.Runner
-import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult, Selection)
+import Test.Runner.UnitNode.Internal as I exposing ( Outcome(..), SuiteResult, TestResult, Selection )
 import Test.Runner.UnitNode.Reason as Reason
 import Time
 
@@ -53,8 +53,7 @@ runSuite cfg =
     let
         selected =
             cfg.tests
-                |> Array.keepIf
-                    (\t -> cfg.selection.isSelected (qualified cfg.name t.name))
+                |> Array.keepIf (\t -> cfg.selection.isSelected (qualified cfg.name t.name))
     in
     if Array.isEmpty selected then
         Task.succeed { name = cfg.name, results = [], suiteError = Nothing }
@@ -64,8 +63,7 @@ runSuite cfg =
         -- the whole remaining chain is uniformly `Task Never` — Never and String
         -- error channels won't unify across `andThen`.
         attempt cfg.setUpSuite
-            |> Task.andThen
-                (\setUpResult ->
+            |> Task.andThen (\setUpResult ->
                     when setUpResult is
                         Err e ->
                             -- setUpSuite threw: every test Errored, no tearDownSuite.
@@ -75,33 +73,26 @@ runSuite cfg =
 
                                 errored =
                                     selected
-                                        |> Array.map
-                                            (\t ->
+                                        |> Array.map (\t ->
                                                 { suiteName = cfg.name
                                                 , name = t.name
                                                 , outcome = Errored msg
                                                 , durationMs = 0
-                                                }
-                                            )
+                                                })
                             in
                             Task.succeed (ok cfg.name errored (Just msg))
 
                         Ok suiteFix ->
                             runTestsSeq cfg suiteFix selected
-                                |> Task.andThen
-                                    (\results ->
+                                |> Task.andThen (\results ->
                                         attempt (cfg.tearDownSuite suiteFix)
-                                            |> Task.map
-                                                (\tearResult ->
+                                            |> Task.map (\tearResult ->
                                                     when tearResult is
                                                         Ok _ ->
                                                             ok cfg.name results Nothing
 
                                                         Err e ->
-                                                            ok cfg.name results (Just ("tearDownSuite: " ++ e))
-                                                )
-                                    )
-                )
+                                                            ok cfg.name results (Just ("tearDownSuite: " ++ e)))))
 
 
 {-| Run tests strictly in order, each producing a `TestResult`, accumulating
@@ -117,12 +108,9 @@ runTestsSeq cfg suiteFix tests =
     Array.foldl
         (\t acc ->
             acc
-                |> Task.andThen
-                    (\soFar ->
+                |> Task.andThen (\soFar ->
                         runTest cfg suiteFix t
-                            |> Task.map (\r -> Array.pushLast r soFar)
-                    )
-        )
+                            |> Task.map (\r -> Array.pushLast r soFar)))
         (Task.succeed [])
         tests
 
@@ -134,23 +122,16 @@ runTest :
     -> Task Never TestResult
 runTest cfg suiteFix t =
     Time.now
-        |> Task.andThen
-            (\start ->
+        |> Task.andThen (\start ->
                 lifecycle cfg suiteFix t
-                    |> Task.andThen
-                        (\outcome ->
+                    |> Task.andThen (\outcome ->
                             Time.now
-                                |> Task.map
-                                    (\end ->
+                                |> Task.map (\end ->
                                         { suiteName = cfg.name
                                         , name = t.name
                                         , outcome = outcome
-                                        , durationMs =
-                                            Time.posixToMillis end - Time.posixToMillis start
-                                        }
-                                    )
-                        )
-            )
+                                        , durationMs = Time.posixToMillis end - Time.posixToMillis start
+                                        })))
 
 
 {-| setUp → body → tearDown for one test, reduced to a never-failing
@@ -163,8 +144,7 @@ lifecycle :
     -> Task Never Outcome
 lifecycle cfg suiteFix t =
     attempt (cfg.setUp suiteFix)
-        |> Task.andThen
-            (\setUpResult ->
+        |> Task.andThen (\setUpResult ->
                 when setUpResult is
                     Err e ->
                         -- setUp threw: no body, no tearDown (tearDown only pairs
@@ -173,20 +153,15 @@ lifecycle cfg suiteFix t =
 
                     Ok testFix ->
                         runBody t.body testFix
-                            |> Task.andThen
-                                (\outcome ->
+                            |> Task.andThen (\outcome ->
                                     attempt (cfg.tearDown testFix)
-                                        |> Task.map
-                                            (\tearResult ->
+                                        |> Task.map (\tearResult ->
                                                 when tearResult is
                                                     Ok _ ->
                                                         outcome
 
                                                     Err e ->
-                                                        withTearDownError outcome e
-                                            )
-                                )
-            )
+                                                        withTearDownError outcome e)))
 
 
 runBody : (testFix -> Task String Expectation) -> testFix -> Task Never Outcome

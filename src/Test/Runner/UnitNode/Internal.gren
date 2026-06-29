@@ -24,7 +24,7 @@ Gren has neither existentials nor type classes, so this closure erasure is the
 only way to get heterogeneous fixtures into one list.
 -}
 
-import Task exposing (Task)
+import Task exposing ( Task )
 
 
 {-| A test group, with its fixture types erased.
@@ -38,8 +38,7 @@ import Task exposing (Task)
   an `Outcome` inside `SuiteResult`.
 -}
 type Suite
-    = Suite
-        { name : String
+    = Suite { name : String
         , testNames : Array String
         , run : Selection -> Task Never SuiteResult
         }
@@ -50,8 +49,7 @@ patterns and threaded into every group's `run`. With no patterns, `isSelected`
 is constantly `True` (run everything).
 -}
 type alias Selection =
-    { isSelected : String -> Bool
-    }
+    { isSelected : String -> Bool }
 
 
 {-| The result of a single test, mirroring unittest's pass / fail / error split.

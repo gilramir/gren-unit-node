@@ -23,14 +23,14 @@ now in Gren:
   nonzero exit is rendered by us, not mangled by `Debug.toString`.
 -}
 
-import Bytes exposing (Bytes)
+import Bytes exposing ( Bytes )
 import ChildProcess
-import Expect exposing (Expectation)
+import Expect exposing ( Expectation )
 import FileSystem
-import FileSystem.Path as Path exposing (Path)
+import FileSystem.Path as Path exposing ( Path )
 import Init
 import Node
-import Task exposing (Task)
+import Task exposing ( Task )
 import Test.Runner.UnitNode as U
 
 
@@ -45,21 +45,17 @@ main =
     U.runWith
         { name = "gren-format-cli-tests"
         , version = "1.0.0"
-        , init =
-            \done ->
-                Init.await FileSystem.initialize <| \fs ->
+        , init = \done ->
+            Init.await FileSystem.initialize <| \fs ->
                 Init.await ChildProcess.initialize <| \cp ->
                     done { fs = fs, childProcess = cp }
         , globalSetUp = U.noFixture
         , globalTearDown = U.noTearDown
-        , suites =
-            \perms ->
-                [ showFlagSuite perms
-                , inPlaceSuite perms
-                ]
+        , suites = \perms ->
+            [ showFlagSuite perms
+            , inPlaceSuite perms
+            ]
         }
-
-
 
 -- SUITE 1: --show, no fixtures beyond the app path
 
@@ -72,24 +68,19 @@ showFlagSuite perms =
         , tearDownSuite = U.noTearDown
         , setUp = \appPath -> Task.succeed appPath
         , tearDown = U.noTearDown
-        , tests =
-            [ U.test "formats a file to stdout" <| \appPath ->
+        , tests = [ U.test "formats a file to stdout" <| \appPath ->
                 runApp perms appPath { cwd = Nothing } [ "--show", helloFixture ]
-                    |> Task.map
-                        (\r ->
+                    |> Task.map (\r ->
                             Expect.all
                                 [ \_ -> Expect.equal 0 r.exitCode
                                 , \_ -> expectContains "module Hello" r.stdout
                                 ]
-                                {}
-                        )
+                                {})
             , U.test "missing file exits nonzero" <| \appPath ->
                 runApp perms appPath { cwd = Nothing } [ "--show", "/nonexistent/Missing.gren" ]
                     |> Task.map (\r -> Expect.notEqual 0 r.exitCode)
             ]
         }
-
-
 
 -- SUITE 2: positional arg formats in place, with a per-test temp dir fixture
 
@@ -106,18 +97,15 @@ inPlaceSuite perms =
         { name = "InPlace"
         , setUpSuite = locateApp perms
         , tearDownSuite = U.noTearDown
-        , setUp =
-            \appPath ->
-                FileSystem.makeTempDirectory perms.fs "gren-unit-node"
-                    |> Task.map (\dir -> { appPath = appPath, dir = dir })
-                    |> Task.mapError (\e -> "makeTempDirectory: " ++ Debug.toString e)
-        , tearDown =
-            \fix ->
-                FileSystem.remove perms.fs { recursive = True } fix.dir
-                    |> Task.map (\_ -> {})
-                    |> Task.mapError (\e -> "remove temp dir: " ++ Debug.toString e)
-        , tests =
-            [ U.test "formats file in place" <| \fix ->
+        , setUp = \appPath ->
+            FileSystem.makeTempDirectory perms.fs "gren-unit-node"
+                |> Task.map (\dir -> { appPath = appPath, dir = dir })
+                |> Task.mapError (\e -> "makeTempDirectory: " ++ Debug.toString e)
+        , tearDown = \fix ->
+            FileSystem.remove perms.fs { recursive = True } fix.dir
+                |> Task.map (\_ -> {})
+                |> Task.mapError (\e -> "remove temp dir: " ++ Debug.toString e)
+        , tests = [ U.test "formats file in place" <| \fix ->
                 let
                     file =
                         Path.append (Path.fromPosixString "Hello.gren") fix.dir
@@ -128,11 +116,8 @@ inPlaceSuite perms =
                 writeText perms file dirty
                     |> Task.andThen (\_ -> runApp perms fix.appPath { cwd = Just (Path.toPosixString fix.dir) } [ Path.toPosixString file ])
                     |> Task.andThen (\_ -> readText perms file)
-                    |> Task.map (\after -> expectContains "\n\n\n" after)
-            ]
+                    |> Task.map (\after -> expectContains "\n\n\n" after) ]
         }
-
-
 
 -- HELPERS (these would live in the framework or a shared support module)
 
@@ -166,28 +151,24 @@ runApp : Perms -> String -> { cwd : Maybe String } -> Array String -> Task Strin
 runApp perms appPath { cwd } args =
     let
         opts =
-            { ChildProcess.defaultRunOptions
-                | workingDirectory =
-                    when cwd is
-                        Just d ->
-                            ChildProcess.SetWorkingDirectory d
+            { ChildProcess.defaultRunOptions | workingDirectory =
+                when cwd is
+                    Just d ->
+                        ChildProcess.SetWorkingDirectory d
 
-                        Nothing ->
-                            ChildProcess.InheritWorkingDirectory
-            }
+                    Nothing ->
+                        ChildProcess.InheritWorkingDirectory }
     in
     ChildProcess.run perms.childProcess "node" (Array.pushFirst appPath args) opts
         |> Task.map (\okRun -> { exitCode = 0, stdout = bytesToString okRun.stdout, stderr = bytesToString okRun.stderr })
-        |> Task.onError
-            (\err ->
+        |> Task.onError (\err ->
                 when err is
                     ChildProcess.ProgramError e ->
                         Task.succeed { exitCode = e.exitCode, stdout = bytesToString e.stdout, stderr = bytesToString e.stderr }
 
                     ChildProcess.InitError e ->
                         -- a genuine "couldn't even launch" — surface as a test error
-                        Task.fail ("could not launch app: " ++ e.errorCode)
-            )
+                        Task.fail ("could not launch app: " ++ e.errorCode))
 
 
 writeText : Perms -> Path -> String -> Task String {}

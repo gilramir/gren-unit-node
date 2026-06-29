@@ -13,7 +13,7 @@ generic `description`-plus-`Debug.toString` line. Filling them in is purely
 cosmetic and can be done incrementally.
 -}
 
-import Test.Runner.Failure as Failure exposing (Reason)
+import Test.Runner.Failure as Failure exposing ( Reason )
 
 
 render : String -> Reason -> String
