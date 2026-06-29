@@ -4,6 +4,38 @@ A test framework for Gren Node applications. Write your tests in Gren, orgranizi
 test suites. Run them from the command line and get a pass/fail report with per-suite timing,
 or per-test timing with `-v`.
 
+**Example output: see a per-suite summary***
+```
+% node app
+
+Import Statements                                    ok    8/8    (70 ms)
+Expressions                                          ok    54/54  (471 ms)
+Declarations                                         ok    5/5    (23 ms)
+Comments                                             ok    39/39  (260 ms)
+Kitchen sink                                         ok    11/11  (649 ms)
+
+
+Ran 117 tests in 1473 ms
+
+OK — 117 passed
+```
+
+**Example output: see a per-test details for just one suite***
+```
+$ node app -v 'Declarations.*'
+
+Declarations.type aliases                            ok    (15 ms)
+Declarations.union types                             ok    (6 ms)
+Declarations.type signatures                         ok    (13 ms)
+Declarations.ports                                   ok    (4 ms)
+Declarations.effect module where { command = ... } renders each binding as one field ok    (7 ms)
+
+
+Ran 5 tests in 45 ms
+
+OK — 5 passed
+```
+
 ## Setup
 
 Create a `tests/` application directory alongside your package or application. Add `gilramir/gren-unit-node` as a dependency in `tests/gren.json`. For example:
@@ -72,6 +104,18 @@ Each test body must return `Task String Expectation`.
 fits it into the `Task` type the framework expects.
 Tests that do file I/O or spawn processes already return a `Task`,
 so they use `Task.map` to produce the `Expectation` at the end instead.
+
+For example, a test that reads a file uses `Task.map` to turn the bytes into an `Expectation`:
+
+```gren
+U.test "config file has expected content" <| \perms ->
+    FileSystem.readFile perms.fs (Path.fromPosixString "config.txt")
+        |> Task.mapError Debug.toString
+        |> Task.map (\bytes ->
+                Expect.equal "enabled=true\n" (Bytes.toString bytes |> Maybe.withDefault ""))
+```
+
+`Task.mapError` converts any filesystem error into the `String` the framework uses as a failure message. `perms` is a permissions record provided by `U.runWith` — see "Tests that need resources" below.
 
 Use the standard `Expect.*` functions from `gren-lang/test` for assertions.
 
@@ -170,11 +214,16 @@ main =
         }
 ```
 
-Your `suites` function receives whatever record you passed to `done`. Use `U.noFixture` and `U.noTearDown` as no-ops when you don't need a global lifecycle.
+Your `suites` function receives whatever record you passed to `done`. Use
+`U.noFixture` and `U.noTearDown` as no-ops when you don't need a global
+lifecycle.
 
 ### Per-test setup and teardown
 
-Here each test gets a fresh temporary directory, created in `setUp` and removed in `tearDown`:
+Here each test gets a fresh temporary directory, created in `setUp` and
+removed in `tearDown`. The framework runs `setUp` before each test and
+passes whatever its `Task` resolves to as the argument to that test's
+body — so `\dir ->` receives the `Path` that `setUp` produced.
 
 ```gren
 tempDirSuite : Perms -> U.Suite
@@ -207,7 +256,9 @@ tempDirSuite perms =
 
 ### Suite-level setup
 
-`setUpSuite` and `tearDownSuite` run once for the whole suite — useful for expensive one-time work like locating a binary. The value `setUpSuite` produces is passed to every `setUp` call as its first argument:
+`setUpSuite` and `tearDownSuite` run once for the whole suite — useful
+for expensive one-time work like locating a binary. The value `setUpSuite`
+produces is passed to every `setUp` call as its first argument:
 
 ```gren
 U.suite
@@ -225,7 +276,10 @@ U.suite
 
 ### Global setup and teardown
 
-`globalSetUp` and `globalTearDown` run once around the entire test run — before any suite starts and after all suites finish. Both receive the same `perms` record as `suites`. Use them for expensive one-time work that spans all suites, such as starting a server or seeding a database:
+`globalSetUp` and `globalTearDown` run once around the entire test run
+— before any suite starts and after all suites finish. Both receive
+the same `perms` record as `suites`. Use them for expensive one-time work
+that spans all suites, such as starting a server or seeding a database:
 
 ```gren
 main : Node.SimpleProgram a
@@ -244,7 +298,9 @@ main =
         }
 ```
 
-If `globalSetUp` fails, no suites run and `globalTearDown` is skipped. If `globalTearDown` fails, the program exits with an error after the report has been printed.
+If `globalSetUp` fails, no suites run and `globalTearDown` is skipped. If
+`globalTearDown` fails, the program exits with an error after the report
+has been printed.
 
 ### Multiple permissions
 
@@ -260,13 +316,20 @@ init =
 
 ### Error channel
 
-Every lifecycle function and every test body works in `Task String _`. When a task fails, put a human-readable message in the error channel — the framework prints it verbatim in the failure report.
+Every lifecycle function and every test body works in `Task String _`.
+When a task fails, put a human-readable message in the error channel;
+the framework prints it verbatim in the failure report.
 
-Note: `U.runWith` always acquires its own `FileSystem.Permission` internally for `--junit-xml` support. If your tests also need filesystem access, acquire it separately in your `init`.
+Note: `U.runWith` always acquires its own `FileSystem.Permission` internally for
+`--junit-xml` support. If your tests also need filesystem access,
+acquire it separately in your `init`.
 
 ## Comparing output against a file
 
-A common pattern is to keep expected output in a file under `testfiles/` and compare it against what your code produces. `FileSystem.readFile` returns a `Task`, so the comparison lives inside `Task.map`:
+A common pattern is to keep expected output in a file in a directory
+(in this example, `testfiles/`)
+and compare it against what your code produces. `FileSystem.readFile`
+returns a `Task`, so the comparison lives inside `Task.map`:
 
 ```gren
 import Bytes
@@ -308,7 +371,10 @@ goldenSuite perms =
         }
 ```
 
-`Bytes.toString` returns a `Maybe String` because not all byte sequences are valid UTF-8; `Maybe.withDefault ""` is fine for text fixture files. `myRenderFunction` is whatever pure function you are testing — no effects needed on that side, so it just goes in the `let`.
+`Bytes.toString` returns a `Maybe String` because not all byte sequences
+are valid UTF-8; `Maybe.withDefault ""` is fine for text fixture
+files. `myRenderFunction` is whatever pure function you are testing —
+no effects needed on that side, so it just goes in the `let`.
 
 ## What happens when things go wrong
 
@@ -339,7 +405,7 @@ Why another Gren test runner?
 This gren-unit-node package exists because I wanted to include timing
 information and setup and teardown functions.  So we can't run all the
 test tasks first and the evaulate the resulting `Expectation` values
-together. In The gren-unit-node model, the **ordering and timing**
+together. In the gren-unit-node model, the **ordering and timing**
 of individual steps matters:
 
 - **Per-test setUp and tearDown.** A tearDown that must release the
