@@ -1,4 +1,4 @@
-module Test.Runner.UnitNode.Glob exposing ( matches )
+module Test.Runner.UnitNode.Glob exposing (matches)
 
 {-| A tiny shell-style glob, enough to select tests by name on the CLI.
 
@@ -21,6 +21,7 @@ matches "Format.x"        "Format.imports"       --> False
 Matching is whole-string (anchored at both ends); wrap a pattern in `*…*` for a
 substring search. Implemented as a classic two-cursor backtracking matcher over
 `Array Char` — no regex dependency.
+
 -}
 
 

@@ -1,4 +1,4 @@
-module Test.Runner.UnitNode.Report exposing ( Style(..), render )
+module Test.Runner.UnitNode.Report exposing (Style(..), render)
 
 {-| Turn the collected `SuiteResult`s into the console report string.
 
@@ -18,7 +18,7 @@ interleaving `Stream.Log.line` calls inside the runner loop instead; the data
 model already supports it, it's purely a presentation choice deferred for v1.
 -}
 
-import Test.Runner.UnitNode.Internal as I exposing ( Outcome(..), SuiteResult, TestResult )
+import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
 
 
 type Style
@@ -35,13 +35,16 @@ render opts suiteResults =
 
         suiteErrors =
             suiteResults
-                |> Array.foldl (\sr acc ->
+                |> Array.foldl
+                    (\sr acc ->
                         when sr.suiteError is
                             Just e ->
                                 Array.pushLast (sr.name ++ ": " ++ e) acc
 
                             Nothing ->
-                                acc) []
+                                acc
+                    )
+                    []
 
         body =
             when opts.style is
@@ -100,11 +103,16 @@ suiteLine useColor sr =
             Array.length sr.results
 
         passed =
-            sr.results |> Array.foldl (\r acc -> if isFailed r.outcome || isErrored r.outcome then
+            sr.results
+                |> Array.foldl
+                    (\r acc ->
+                        if isFailed r.outcome || isErrored r.outcome then
                             acc
 
                         else
-                            acc + 1) 0
+                            acc + 1
+                    )
+                    0
 
         durationMs =
             Array.foldl (\r acc -> acc + r.durationMs) 0 sr.results
@@ -153,8 +161,10 @@ detailBlock label results =
 
     else
         results
-            |> Array.map (\r ->
-                    "=== " ++ label ++ ": " ++ r.suiteName ++ "." ++ r.name ++ " ===\n" ++ messageOf r.outcome)
+            |> Array.map
+                (\r ->
+                    "=== " ++ label ++ ": " ++ r.suiteName ++ "." ++ r.name ++ " ===\n" ++ messageOf r.outcome
+                )
             |> String.join "\n\n"
 
 

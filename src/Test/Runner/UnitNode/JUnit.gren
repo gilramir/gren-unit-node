@@ -1,4 +1,4 @@
-module Test.Runner.UnitNode.JUnit exposing ( toXmlString )
+module Test.Runner.UnitNode.JUnit exposing (toXmlString)
 
 {-| Serialize results to the de-facto JUnit XML schema that CI systems
 (Jenkins, GitLab, GitHub Actions reporters, …) understand:
@@ -18,7 +18,7 @@ and text values are XML-escaped. This is pure string building over the same
 caller does the `FileSystem.writeFile`.
 -}
 
-import Test.Runner.UnitNode.Internal as I exposing ( Outcome(..), SuiteResult, TestResult )
+import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
 
 
 toXmlString : Array SuiteResult -> String
@@ -114,12 +114,15 @@ suiteErrorXml maybeErr =
 countWhere : (Outcome -> Bool) -> Array TestResult -> Int
 countWhere pred results =
     results
-        |> Array.foldl (\r acc ->
+        |> Array.foldl
+            (\r acc ->
                 if pred r.outcome then
                     acc + 1
 
                 else
-                    acc) 0
+                    acc
+            )
+            0
 
 
 secondsString : Int -> String

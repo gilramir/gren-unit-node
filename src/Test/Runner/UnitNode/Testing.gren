@@ -16,7 +16,7 @@ for use outside this package.
 @docs runSuite, runSuiteFiltered
 -}
 
-import Task exposing ( Task )
+import Task exposing (Task)
 import Test.Runner.UnitNode.Internal as I
 
 

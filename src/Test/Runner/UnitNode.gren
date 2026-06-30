@@ -70,8 +70,8 @@ mangling them through `Debug.toString`.
 
 import Init
 import Node
-import Task exposing ( Task )
-import Expect exposing ( Expectation )
+import Task exposing (Task)
+import Expect exposing (Expectation)
 import Test.Runner.UnitNode.Internal as I
 import Test.Runner.UnitNode.Program as P
 import Test.Runner.UnitNode.Runner as Runner

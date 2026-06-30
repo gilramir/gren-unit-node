@@ -1,4 +1,4 @@
-module Main exposing ( main )
+module Main exposing (main)
 
 import Node
 import Test.Runner.UnitNode as U
@@ -11,8 +11,7 @@ main =
     U.run
         { name = "gren-unit-node-tests"
         , version = "1.0.0"
-        , suites =
-            [ GlobTests.suite
+        , suites = [ GlobTests.suite
             , RunnerTests.lifecycleSuite
             , RunnerTests.selectionSuite
             ]

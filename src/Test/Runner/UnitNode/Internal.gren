@@ -24,7 +24,7 @@ Gren has neither existentials nor type classes, so this closure erasure is the
 only way to get heterogeneous fixtures into one list.
 -}
 
-import Task exposing ( Task )
+import Task exposing (Task)
 
 
 {-| A test group, with its fixture types erased.
