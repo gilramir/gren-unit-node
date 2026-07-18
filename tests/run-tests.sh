@@ -2,6 +2,6 @@
 
 set -e
 
-../../gren.sh make Main --output=app
+devbox run build_test
 
 node app "$@"

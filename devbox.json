@@ -10,8 +10,12 @@
         "gren make"
       ],
       "examples": [
-        "cd examples/cli-test",
+        "cd examples/cli-tests",
         "gren make Main --output=app"
+      ],
+      "build_test": [
+        "cd tests/",
+        "gren make Main"
       ],
       "test": [
         "cd tests/",
