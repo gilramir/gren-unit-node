@@ -24,6 +24,10 @@ body can't short-circuit the chain. Likewise `tearDown`'s own error is caught
 and folded in, never propagated. The only thing that can skip work is an
 *earlier* lifecycle step failing, which is the intended semantics.
 
+Each finished test is handed to `cfg.reporter` before the next one starts, which
+is what lets a verbose run print live. The reporter works in `Task Never {}`, so
+it cannot fail and therefore cannot perturb any of the guarantees above.
+
 Errors are plain `String`s throughout (see `Test.Runner.UnitNode`): the user is
 responsible for rendering their own effect errors to text, which also sidesteps
 the `Debug.toString` mangling that bites the stock effectful runner.
@@ -45,6 +49,7 @@ type alias Config suiteFix testFix =
     , tearDown : testFix -> Task String {}
     , tests : Array { name : String, body : testFix -> Task String Expectation }
     , selection : Selection
+    , reporter : I.Reporter
     }
 
 
@@ -83,7 +88,12 @@ runSuite cfg =
                                                 }
                                             )
                             in
-                            Task.succeed (ok cfg.name errored (Just msg))
+                            -- These results never pass through `runTest`, so report them
+                            -- here or a verbose run would silently drop every line for a
+                            -- suite whose setUpSuite threw — exactly the run you most want
+                            -- to see.
+                            reportEach cfg.reporter errored
+                                |> Task.map (\_ -> ok cfg.name errored (Just msg))
 
                         Ok suiteFix ->
                             runTestsSeq cfg suiteFix selected
@@ -139,13 +149,22 @@ runTest cfg suiteFix t =
                     |> Task.andThen
                         (\outcome ->
                             Time.now
-                                |> Task.map
+                                |> Task.andThen
                                     (\end ->
-                                        { suiteName = cfg.name
-                                        , name = t.name
-                                        , outcome = outcome
-                                        , durationMs = Time.posixToMillis end - Time.posixToMillis start
-                                        }
+                                        let
+                                            result =
+                                                { suiteName = cfg.name
+                                                , name = t.name
+                                                , outcome = outcome
+                                                , durationMs = Time.posixToMillis end - Time.posixToMillis start
+                                                }
+                                        in
+                                        -- Report before moving on, so a verbose run shows this
+                                        -- test's line while the *next* one is still running. The
+                                        -- clock has already been stopped, so reporting cost never
+                                        -- lands in a test's reported duration.
+                                        cfg.reporter.onTestDone result
+                                            |> Task.map (\_ -> result)
                                     )
                         )
             )
@@ -216,6 +235,16 @@ withTearDownError outcome err =
 
         _ ->
             outcome
+
+
+{-| Hand a batch of already-decided results to the reporter, in order.
+-}
+reportEach : I.Reporter -> Array TestResult -> Task Never {}
+reportEach reporter results =
+    Array.foldl
+        (\r acc -> acc |> Task.andThen (\_ -> reporter.onTestDone r))
+        (Task.succeed {})
+        results
 
 
 {-| Run a `Task String a`, moving its error off the failure channel and into the

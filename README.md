@@ -152,16 +152,24 @@ handle the additional options to the node application.
 node app -v
 ```
 
-Here you see the status and execution duration of each individual test.
+Here you see the status and execution duration of each individual test,
+followed by the suite's own line as a rollup.
 ```
 Math.addition                            ok    (6 ms)
 Math.subtraction                         ok    (6 ms)
+Math                                     ok    2/2    (12 ms)
 
 
 Ran 2 tests in 12 ms
 
 OK — 2 passed
 ```
+
+Output is printed **as the run progresses** — each test line as that test
+finishes under `-v`, each suite line as that suite finishes — so a long test
+run shows you where it is instead of staying silent until the end. Only the
+failure details and the final counts wait for the whole run, since those are
+the only parts that need every result.
 
 ## Selecting tests
 
@@ -422,6 +430,10 @@ of individual steps matters:
 - **Machine-readable output.** JUnit XML and similar formats need per-test
   outcomes with lifecycle data attached — the same information that per-test
   timing requires.
+
+- **Live progress.** Reporting a result the instant it is known — rather than
+  after every test has run — is only possible if the runner observes each test
+  finish, which is the same requirement as per-test timing.
 
 gren-unit-node addresses these by owning a sequential loop over `Task`. Each test
 runs completely — setUp → body → tearDown — as a single composed `Task` before

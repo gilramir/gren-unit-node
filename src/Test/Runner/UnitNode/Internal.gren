@@ -1,6 +1,8 @@
 module Test.Runner.UnitNode.Internal exposing
     ( Suite(..)
     , Selection
+    , Reporter
+    , silentReporter
     , Outcome(..)
     , TestResult
     , SuiteResult
@@ -33,14 +35,15 @@ import Task exposing (Task)
   every fully-qualified test name (`"GroupName.test name"`).
 * `testNames` — every test's fully-qualified name, known *without running
   anything* so the CLI can list/select before any expensive `setUpSuite` runs.
-* `run` — runs the (pre-filtered) group end to end and yields its results.
-  It never fails: every error, including a thrown `setUpSuite`, is folded into
-  an `Outcome` inside `SuiteResult`.
+* `run` — runs the (pre-filtered) group end to end and yields its results,
+  handing each `TestResult` to the `Reporter` as it completes. It never fails:
+  every error, including a thrown `setUpSuite`, is folded into an `Outcome`
+  inside `SuiteResult`.
 -}
 type Suite
     = Suite { name : String
         , testNames : Array String
-        , run : Selection -> Task Never SuiteResult
+        , run : Selection -> Reporter -> Task Never SuiteResult
         }
 
 
@@ -50,6 +53,29 @@ is constantly `True` (run everything).
 -}
 type alias Selection =
     { isSelected : String -> Bool }
+
+
+{-| Where the runner sends each `TestResult` the moment it is known, so the CLI
+can print a line per test while the run is still going rather than after every
+suite has finished. Suite-level lines need no hook here — `Program.runAll`
+already sees each `SuiteResult` as its `Task` resolves.
+
+`Task Never {}` is deliberate, and is what keeps reporting from being able to
+change the run: a reporter that cannot fail cannot short-circuit the lifecycle
+chain in `Runner`, and it composes with the uniformly-`Never` fold there
+without the Never/String channel clash.
+-}
+type alias Reporter =
+    { onTestDone : TestResult -> Task Never {} }
+
+
+{-| A reporter that emits nothing. Used by the non-verbose CLI path, and by
+`Test.Runner.UnitNode.Testing` — the self-tests run *inner* suites, whose
+per-test lines must not leak into the outer run's report.
+-}
+silentReporter : Reporter
+silentReporter =
+    { onTestDone = \_ -> Task.succeed {} }
 
 
 {-| The result of a single test, mirroring unittest's pass / fail / error split.

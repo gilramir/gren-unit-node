@@ -139,7 +139,7 @@ suite cfg =
     I.Suite
         { name = cfg.name
         , testNames = testNames
-        , run = \selection ->
+        , run = \selection reporter ->
             Runner.runSuite
                 { name = cfg.name
                 , setUpSuite = cfg.setUpSuite
@@ -148,6 +148,7 @@ suite cfg =
                 , tearDown = cfg.tearDown
                 , tests = unwrapped
                 , selection = selection
+                , reporter = reporter
                 }
         }
 

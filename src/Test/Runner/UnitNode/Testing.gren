@@ -12,6 +12,10 @@ Exposes just enough internals to run a `Suite` programmatically and inspect
 its `SuiteResult` — enabling the self-test suite in `tests/`. Not intended
 for use outside this package.
 
+Both runners here use `I.silentReporter`: a suite run through this module is an
+*inner* suite under test, so its per-test lines must never reach the outer
+run's live output.
+
 @docs Outcome, TestResult, SuiteResult
 @docs runSuite, runSuiteFiltered
 -}
@@ -53,7 +57,7 @@ type alias SuiteResult =
 -}
 runSuite : I.Suite -> Task String SuiteResult
 runSuite (I.Suite s) =
-    s.run { isSelected = \_ -> True }
+    s.run { isSelected = \_ -> True } I.silentReporter
         |> Task.map convertSuiteResult
         |> Task.mapError (\_ -> "unreachable")
 
@@ -63,7 +67,7 @@ The predicate receives fully-qualified names (`"SuiteName.testName"`).
 -}
 runSuiteFiltered : (String -> Bool) -> I.Suite -> Task String SuiteResult
 runSuiteFiltered isSelected (I.Suite s) =
-    s.run { isSelected = isSelected }
+    s.run { isSelected = isSelected } I.silentReporter
         |> Task.map convertSuiteResult
         |> Task.mapError (\_ -> "unreachable")
 

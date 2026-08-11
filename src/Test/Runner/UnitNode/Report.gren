@@ -1,21 +1,27 @@
-module Test.Runner.UnitNode.Report exposing (Style(..), render)
+module Test.Runner.UnitNode.Report exposing (Style(..), suiteLine, verboseLine, tail)
 
-{-| Turn the collected `SuiteResult`s into the console report string.
+{-| Rendering for the console report. The report is emitted in two parts, and
+the split is what makes live output possible:
+
+* **the body** — [suiteLine](#suiteLine) and [verboseLine](#verboseLine), each a
+  *pure function of one result*. Nothing about a line depends on any other
+  suite or test (the column widths below are constants, not measured across the
+  run), so `Program` prints them as results land and gets output byte-identical
+  to rendering everything at the end.
+* **the tail** — [tail](#tail): the failure/error detail blocks and the summary
+  counts. This genuinely needs every result, so it is the one thing that waits
+  for the run to finish.
 
 Two styles, mirroring `python -m unittest` and `… -v`:
 
-* `Plain` — one line per **suite** (name, status, total duration), then the
-  failure/error detail blocks, then a summary with pass/fail counts.
+* `Plain` — one line per **suite** (name, status, passed/total, duration).
 * `Verbose` — one line per **test** with its fully-qualified name, status, and
-  wall-clock duration, then the same summary.
+  wall-clock duration, with the suite's line repeated after its tests as a
+  rollup that closes the block.
 
 Color is applied with raw ANSI when `useColor` is set (green pass / red fail /
 yellow error), matching how the rest of this workspace gates color on an
 interactive terminal + absence of `NO_COLOR`.
-
-This builds a single `String`. Live, test-by-test streaming would mean
-interleaving `Stream.Log.line` calls inside the runner loop instead; the data
-model already supports it, it's purely a presentation choice deferred for v1.
 -}
 
 import Test.Runner.UnitNode.Internal as I exposing (Outcome(..), SuiteResult, TestResult)
@@ -26,8 +32,12 @@ type Style
     | Verbose
 
 
-render : { style : Style, useColor : Bool } -> Array SuiteResult -> String
-render opts suiteResults =
+{-| The end-of-run part of the report: detail blocks for every failure and
+error, then the summary counts. The caller has already printed the body line by
+line, and is responsible for the blank lines that separate it from this.
+-}
+tail : { useColor : Bool } -> Array SuiteResult -> String
+tail opts suiteResults =
     let
         allResults =
             suiteResults
@@ -46,18 +56,6 @@ render opts suiteResults =
                     )
                     []
 
-        body =
-            when opts.style is
-                Plain ->
-                    suiteResults
-                        |> Array.map (suiteLine opts.useColor)
-                        |> String.join "\n"
-
-                Verbose ->
-                    allResults
-                        |> Array.map (verboseLine opts.useColor)
-                        |> String.join "\n"
-
         failures =
             allResults |> Array.keepIf (\r -> isFailed r.outcome)
 
@@ -70,8 +68,7 @@ render opts suiteResults =
         totalMs =
             allResults |> Array.foldl (\r acc -> acc + r.durationMs) 0
     in
-    [ body
-    , detailBlock "FAIL" failures
+    [ detailBlock "FAIL" failures
     , detailBlock "ERROR" errors
     , suiteErrorBlock suiteErrors
     , summaryLine { total = Array.length allResults
@@ -86,6 +83,10 @@ render opts suiteResults =
         |> String.join "\n\n\n"
 
 
+{-| One suite's body line: name, status, passed/total, total duration. In
+`Plain` this is the whole body; in `Verbose` it is the rollup printed after the
+suite's own test lines.
+-}
 suiteLine : Bool -> SuiteResult -> String
 suiteLine useColor sr =
     let
@@ -129,6 +130,8 @@ suiteLine useColor sr =
         ++ " ms)"
 
 
+{-| One test's body line in `Verbose`: fully-qualified name, status, duration.
+-}
 verboseLine : Bool -> TestResult -> String
 verboseLine useColor r =
     let

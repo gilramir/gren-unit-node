@@ -16,6 +16,12 @@ CLI surface:
     my-tests --list                # print every test's qualified name and exit
     my-tests --junit-xml out.xml   # also write JUnit results to out.xml
 
+Output is **live**: a suite's line is printed the moment that suite finishes,
+and under `-v` a test's line the moment that test finishes, so a run that takes
+a while shows progress instead of going quiet and dumping everything at the end.
+Only the failure details and the summary counts wait for the run to complete —
+they are the only parts that need every result. See `runAll` and `Report`.
+
 Exit code is `0` only if every selected test passed (argparse's `Succeeded`);
 any failure/error yields `Failed` → exit `1`, after the report is printed. A
 bad flag or a `--junit-xml` write failure fails the task → exit `1` with a
@@ -170,6 +176,13 @@ onCommand buildSuites globalSetUp globalTearDown env ctx flags =
 
         selection =
             selectionFrom flags.patterns
+
+        style =
+            if flags.verbose then
+                Report.Verbose
+
+            else
+                Report.Plain
     in
     if flags.list then
         listTests env suites
@@ -180,11 +193,11 @@ onCommand buildSuites globalSetUp globalTearDown env ctx flags =
             |> Task.mapError (\e -> Program.ExitMessage ("globalSetUp: " ++ e))
             |> Task.andThen
                 (\_ ->
-                    runAll suites selection
+                    runAll env ctx style suites selection
                         |> Task.onError never
                         |> Task.andThen
                             (\suiteResults ->
-                                reportAndWrite env ctx flags suiteResults
+                                reportAndWrite env ctx style flags suiteResults
                                     |> Task.mapError Program.ExitMessage
                                     |> Task.andThen
                                         (\_ ->
@@ -206,33 +219,79 @@ selectionFrom patterns =
             Array.any (\p -> Glob.matches p fullName) patterns }
 
 
-runAll : Array Suite -> Selection -> Task Never (Array SuiteResult)
-runAll suites selection =
+{-| Run every suite in order, printing each body line as soon as it is known
+rather than buffering the whole report to the end — on a suite that takes
+seconds, the point is seeing progress while it happens.
+
+In `Verbose` the reporter prints a line per test from inside the runner; each
+suite then closes its block with the same rollup line `Plain` uses, followed by
+a blank line. In `Plain` only the rollup is printed. Because the line renderers
+are pure functions of one result, the streamed output is byte-identical to what
+rendering at the end produced.
+-}
+runAll : Node.Environment -> Context perms -> Report.Style -> Array Suite -> Selection -> Task Never (Array SuiteResult)
+runAll env ctx style suites selection =
+    let
+        reporter =
+            when style is
+                Report.Verbose ->
+                    { onTestDone = \r -> logLine env (Report.verboseLine ctx.useColor r) }
+
+                Report.Plain ->
+                    I.silentReporter
+    in
     Array.foldl
         (\(Suite s) acc ->
             acc
                 |> Task.andThen
                     (\soFar ->
-                        s.run selection
-                            |> Task.map (\r -> Array.pushLast r soFar)
+                        s.run selection reporter
+                            |> Task.andThen
+                                (\r ->
+                                    endSuiteBlock env ctx style r
+                                        |> Task.map (\_ -> Array.pushLast r soFar)
+                                )
                     )
         )
         (Task.succeed [])
         suites
 
 
-reportAndWrite : Node.Environment -> Context perms -> Flags -> Array SuiteResult -> Task String {}
-reportAndWrite env ctx flags suiteResults =
-    let
-        style =
-            if flags.verbose then
-                Report.Verbose
+{-| Close out one suite's body. `Verbose` appends a trailing blank line to
+separate the block from the next suite's tests; a suite that ran nothing (every
+test deselected by a glob) prints no rollup there, since there is no block for
+it to close. `Plain` prints its line unconditionally, including the `0/0` line
+for a fully-deselected suite, as it always has.
+-}
+endSuiteBlock : Node.Environment -> Context perms -> Report.Style -> SuiteResult -> Task Never {}
+endSuiteBlock env ctx style r =
+    when style is
+        Report.Plain ->
+            logLine env (Report.suiteLine ctx.useColor r)
+
+        Report.Verbose ->
+            if Array.isEmpty r.results then
+                Task.succeed {}
 
             else
-                Report.Plain
+                logLine env (Report.suiteLine ctx.useColor r ++ "\n")
 
+
+logLine : Node.Environment -> String -> Task Never {}
+logLine env text =
+    Stream.Log.line env.stdout text
+
+
+{-| Print the end-of-run tail (failure details + summary), then optionally write
+the JUnit XML. The body is already on screen, streamed by `runAll`, so all this
+adds is the two blank lines that used to come from `render`'s section join.
+-}
+reportAndWrite : Node.Environment -> Context perms -> Report.Style -> Flags -> Array SuiteResult -> Task String {}
+reportAndWrite env ctx style flags suiteResults =
+    let
         reportText =
-            Report.render { style = style, useColor = ctx.useColor } suiteResults
+            tailSeparator style suiteResults
+                ++ Report.tail { useColor = ctx.useColor } suiteResults
     in
     Stream.Log.line env.stdout reportText
         |> Task.andThen
@@ -246,6 +305,30 @@ reportAndWrite env ctx flags suiteResults =
                     Nothing ->
                         Task.succeed {}
             )
+
+
+{-| The blank lines between the streamed body and the tail, reproducing the
+`"\n\n\n"` that `Report.render` used to put between its sections. `Verbose`
+needs one fewer because `endSuiteBlock` already emitted a blank after the last
+block; if nothing was printed at all (a glob that matched no test), the tail
+leads the output and needs none.
+-}
+tailSeparator : Report.Style -> Array SuiteResult -> String
+tailSeparator style suiteResults =
+    when style is
+        Report.Plain ->
+            if Array.isEmpty suiteResults then
+                ""
+
+            else
+                "\n\n"
+
+        Report.Verbose ->
+            if Array.any (\r -> not (Array.isEmpty r.results)) suiteResults then
+                "\n"
+
+            else
+                ""
 
 
 listTests : Node.Environment -> Array Suite -> Task x {}

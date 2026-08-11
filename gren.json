@@ -4,7 +4,7 @@
     "name": "gilramir/gren-unit-node",
     "summary": "xUnit-style test framework: fixtures, CLI selection, timing, JUnit XML output",
     "license": "BSD-3-Clause",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "exposed-modules": [
         "Test.Runner.UnitNode",
         "Test.Runner.UnitNode.Glob",
