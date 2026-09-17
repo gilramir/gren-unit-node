@@ -1,0 +1,17 @@
+[package]
+name = "github.com/gilramir/gren-unit-node"
+version = "1.1.0"
+summary = "xUnit-style test framework: fixtures, CLI selection, timing, JUnit XML output"
+license = "BSD-3-Clause"
+geng = "0.6.0 <= v < 0.7.0"
+
+[platform]
+runtime = "node"
+
+[modules]
+exposed = ["Test.Runner.UnitNode", "Test.Runner.UnitNode.Glob", "Test.Runner.UnitNode.Testing"]
+
+[dependencies]
+"github.com/gilramir/gren-argparse" = "2.0.0 <= v < 3.0.0"
+"github.com/geng-language/node" = "6.1.0 <= v < 7.0.0"
+"github.com/geng-language/test" = "5.0.0 <= v < 6.0.0"
