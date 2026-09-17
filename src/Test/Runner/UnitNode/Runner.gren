@@ -33,6 +33,7 @@ responsible for rendering their own effect errors to text, which also sidesteps
 the `Debug.toString` mangling that bites the stock effectful runner.
 -}
 
+import Int64
 import Task exposing (Task)
 import Expect exposing (Expectation)
 import Test.Runner
@@ -156,7 +157,7 @@ runTest cfg suiteFix t =
                                                 { suiteName = cfg.name
                                                 , name = t.name
                                                 , outcome = outcome
-                                                , durationMs = Time.posixToMillis end - Time.posixToMillis start
+                                                , durationMs = Int64.toInt (Time.posixToMillis end - Time.posixToMillis start)
                                                 }
                                         in
                                         -- Report before moving on, so a verbose run shows this

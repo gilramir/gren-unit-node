@@ -41,7 +41,7 @@ render description reason =
 
         other ->
             -- ArrayDiff / CollectionDiff / Invalid / … — good enough for v1.
-            join [ description, "    " ++ Debug.toString other ]
+            join [ description, "    " ++ inspect other ]
 
 
 join : Array String -> String

@@ -1,18 +1,24 @@
 module Main exposing (main)
 
 import Node
+import Task exposing (Task)
 import Test.Runner.UnitNode as U
 import GlobTests
 import RunnerTests
 
 
-main : Node.SimpleProgram {}
+main : Task Never {}
 main =
-    U.run
-        { name = "gren-unit-node-tests"
-        , version = "1.0.0"
-        , suites = [ GlobTests.suite
-            , RunnerTests.lifecycleSuite
-            , RunnerTests.selectionSuite
-            ]
-        }
+    Node.getEnvironment
+        |> Task.andThen
+            (\env ->
+                U.run env
+                    { name = "gren-unit-node-tests"
+                    , version = "1.0.0"
+                    , suites =
+                        [ GlobTests.suite
+                        , RunnerTests.lifecycleSuite
+                        , RunnerTests.selectionSuite
+                        ]
+                    }
+            )

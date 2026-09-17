@@ -68,10 +68,10 @@ than an arbitrary type) is what lets the runner print them verbatim instead of
 mangling them through `Debug.toString`.
 -}
 
-import Init
 import Node
 import Task exposing (Task)
 import Expect exposing (Expectation)
+import FileSystem
 import Test.Runner.UnitNode.Internal as I
 import Test.Runner.UnitNode.Program as P
 import Test.Runner.UnitNode.Runner as Runner
@@ -179,20 +179,23 @@ noTearDown _ =
 purely computational. For tests that need filesystem, network, or process
 access, use [runWith](#runWith).
 
-    main : Node.SimpleProgram a
+    main : Task Never {}
     main =
-        Test.Runner.UnitNode.run
+        Node.getEnvironment
+            |> Task.andThen (\env -> Test.Runner.UnitNode.run env
             { name = "my-tests"
             , version = "1.0.0"
             , suites = [ arithmetic, stringTests ]
             }
+            )
 -}
 run :
-    { name : String
+    Node.Environment
+    -> { name : String
     , version : String
     , suites : Array Suite
     }
-    -> Node.SimpleProgram a
+    -> Task Never {}
 run =
     P.run
 
@@ -202,13 +205,15 @@ your tests need permissions other than `fs + childProcess`, or none at all.
 See `Test.Runner.UnitNode.Program.runWith` for full documentation.
 -}
 runWith :
-    { name : String
+    Node.Environment
+    -> { name : String
     , version : String
-    , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , init : Task Never perms
+    , fileSystem : perms -> Maybe FileSystem.Permission
     , globalSetUp : perms -> Task String {}
     , globalTearDown : perms -> Task String {}
     , suites : perms -> Array Suite
     }
-    -> Node.SimpleProgram a
+    -> Task Never {}
 runWith =
     P.runWith

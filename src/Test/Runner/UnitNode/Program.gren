@@ -1,6 +1,6 @@
 module Test.Runner.UnitNode.Program exposing (run, runWith)
 
-{-| The CLI entry point. `run` and `runWith` build a complete `Node.SimpleProgram`
+{-| The CLI entry point. `run` and `runWith` build a complete `main : Task Never {}`
 on top of `gilramir/gren-argparse`, so a test executable's `main` is a one-liner.
 
 `run` is the convenience form: it acquires `FileSystem` and `ChildProcess`
@@ -32,12 +32,11 @@ import Argparse.Parser as AP
 import Argparse.PrettyPrinter as PP
 import Argparse.Program as Program
 import Bytes exposing (Bytes)
+import Console
 import Dict
 import FileSystem
 import FileSystem.Path as Path exposing (Path)
-import Init
 import Node
-import Stream.Log
 import Task exposing (Task)
 import Terminal
 import Test.Runner.UnitNode.Internal as I exposing (Suite(..), SuiteResult, Selection)
@@ -56,7 +55,7 @@ type alias Flags =
 
 type alias Context perms =
     { perms : perms
-    , fs : FileSystem.Permission
+    , fs : Maybe FileSystem.Permission
     , useColor : Bool
     }
 
@@ -66,16 +65,18 @@ purely computational and need no filesystem, network, or process access.
 For tests that need resources, use [runWith](#runWith).
 -}
 run :
-    { name : String
+    Node.Environment
+    -> { name : String
     , version : String
     , suites : Array Suite
     }
-    -> Node.SimpleProgram a
-run userConfig =
-    runWith
+    -> Task Never {}
+run env userConfig =
+    runWith env
         { name = userConfig.name
         , version = userConfig.version
-        , init = \done -> done {}
+        , init = Task.succeed {}
+        , fileSystem = \_ -> Nothing
         , globalSetUp = \_ -> Task.succeed {}
         , globalTearDown = \_ -> Task.succeed {}
         , suites = \_ -> userConfig.suites
@@ -86,55 +87,57 @@ run userConfig =
 need permissions beyond — or instead of — the `fs + childProcess` pair that
 `run` provides.
 
-The `init` argument follows the same continuation pattern as `Init.await`:
-call `done` with whatever permissions your tests need.
+`init` is a task that answers whatever permissions your tests need. It is
+written in your application, which is where a permission may be minted.
 
-    U.runWith
+    U.runWith env
         { name = "my-tests"
         , version = "1.0.0"
-        , init =
-            \done ->
-                Init.await HttpClient.initialize <| \http ->
-                    done { http = http }
+        , init = HttpClient.initialize |> Task.map (\http -> { http = http })
+        , fileSystem = \_ -> Nothing
+        , globalSetUp = \_ -> Task.succeed {}
+        , globalTearDown = \_ -> Task.succeed {}
         , suites = \perms -> [ mySuite perms ]
         }
 
-For no permissions at all:
+For no permissions at all, `init = Task.succeed {}`.
 
-    init = \done -> done {}
-
-Note: the framework always acquires `FileSystem.Permission` for itself (to
-support `--junit-xml`). If your tests also need filesystem access, acquire it
-separately in your `init`.
+`fileSystem` picks the `FileSystem.Permission` that `--junit-xml` writes with out
+of your permissions, or `Nothing`, in which case `--junit-xml` fails with a
+message. On Geng a package may not acquire a permission itself (geng-lang
+`m1b-source.md` D258), so the framework cannot acquire this one for you.
 -}
 runWith :
-    { name : String
+    Node.Environment
+    -> { name : String
     , version : String
-    , init : (perms -> Init.Task (Cmd a)) -> Init.Task (Cmd a)
+    , init : Task Never perms
+    , fileSystem : perms -> Maybe FileSystem.Permission
     , globalSetUp : perms -> Task String {}
     , globalTearDown : perms -> Task String {}
     , suites : perms -> Array Suite
     }
-    -> Node.SimpleProgram a
-runWith userConfig =
-    Program.runRootWithContext
+    -> Task Never {}
+runWith env userConfig =
+    Program.runRootWithContext env
         { name = userConfig.name
         , version = userConfig.version
         , command = command
-        , init = \_env toProgram ->
-            Init.await FileSystem.initialize <|
-                \fs ->
-                    Init.await Terminal.initialize <|
-                        \termConfig ->
-                            Init.awaitTask Node.getEnvironmentVariables <|
-                                \envVars ->
-                                    userConfig.init <|
-                                        \userPerms ->
-                                            toProgram
-                                                { perms = userPerms
-                                                , fs = fs
-                                                , useColor = termConfig /= Nothing && not (Dict.member "NO_COLOR" envVars)
-                                                }
+        , init =
+            \_env ->
+                userConfig.init
+                    |> Task.andThen
+                        (\userPerms ->
+                            Task.map2
+                                (\terminal envVars ->
+                                    { perms = userPerms
+                                    , fs = userConfig.fileSystem userPerms
+                                    , useColor = terminal /= Nothing && not (Dict.member "NO_COLOR" envVars)
+                                    }
+                                )
+                                Terminal.describe
+                                Node.getEnvironmentVariables
+                        )
         , onCommand = onCommand userConfig.suites userConfig.globalSetUp userConfig.globalTearDown
         }
 
@@ -279,7 +282,7 @@ endSuiteBlock env ctx style r =
 
 logLine : Node.Environment -> String -> Task Never {}
 logLine env text =
-    Stream.Log.line env.stdout text
+    Console.write (text ++ "\n")
 
 
 {-| Print the end-of-run tail (failure details + summary), then optionally write
@@ -293,16 +296,19 @@ reportAndWrite env ctx style flags suiteResults =
             tailSeparator style suiteResults
                 ++ Report.tail { useColor = ctx.useColor } suiteResults
     in
-    Stream.Log.line env.stdout reportText
+    Console.write (reportText ++ "\n")
         |> Task.andThen
             (\_ ->
-                when flags.junitXml is
-                    Just path ->
-                        FileSystem.writeFile ctx.fs (bytesOf (JUnit.toXmlString suiteResults)) path
+                when { path = flags.junitXml, fs = ctx.fs } is
+                    { path = Just path, fs = Just fs } ->
+                        FileSystem.writeFile fs (bytesOf (JUnit.toXmlString suiteResults)) path
                             |> Task.map (\_ -> {})
-                            |> Task.mapError (\e -> "could not write JUnit XML: " ++ Debug.toString e)
+                            |> Task.mapError (\e -> "could not write JUnit XML: " ++ FileSystem.errorToString e)
 
-                    Nothing ->
+                    { path = Just _, fs = Nothing } ->
+                        Task.fail "could not write JUnit XML: this test executable has no FileSystem.Permission; runWith's fileSystem gives it one"
+
+                    { path = Nothing } ->
                         Task.succeed {}
             )
 
@@ -336,7 +342,7 @@ listTests env suites =
     suites
         |> Array.foldl (\(Suite s) acc -> acc ++ s.testNames) []
         |> String.join "\n"
-        |> Stream.Log.line env.stdout
+        |> (\text -> Console.write (text ++ "\n"))
 
 
 outcomeFor : Array SuiteResult -> Task Program.Failure {}
