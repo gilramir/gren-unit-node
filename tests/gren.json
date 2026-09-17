@@ -7,15 +7,14 @@
     "gren-version": "0.6.6",
     "dependencies": {
         "direct": {
-            "gilramir/gren-unit-node": "local:..",
-            "gilramir/gren-argparse": "local:../../gren-argparse",
-            "gren-lang/core": "local:../../../gren-lang/core",
-            "gren-lang/node": "local:../../../gren-lang/node",
-            "gren-lang/test": "local:../../../gren-lang/test",
-            "geng/stream": "local:../../../../packages/stream"
+            "github.com/gilramir/gren-unit-node": "local:..",
+            "github.com/gilramir/gren-argparse": "local:../../gren-argparse",
+            "github.com/geng-language/node": "local:../../../gren-lang/node",
+            "github.com/geng-language/test": "local:../../../gren-lang/test",
+            "github.com/geng-language/stream": "local:../../../../packages/stream"
         },
         "indirect": {
-            "gren-lang/url": "6.0.0"
+            "github.com/geng-language/url": "local:../../../../packages/url"
         }
     }
 }
