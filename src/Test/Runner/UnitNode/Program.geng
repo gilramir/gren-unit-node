@@ -155,7 +155,7 @@ command =
             )
             |> AP.toggle (AP.Both { long = "verbose", short = "v" }) "Show per-test status and execution time"
             |> AP.toggle (AP.Both { long = "list", short = "l" }) "List every test's qualified name and exit"
-            |> AP.flag (AP.LongOnly "junit-xml") AP.pathParser "Write JUnit XML results to the given path"
+            |> AP.flag (AP.LongOnly "junit-xml") (AP.pathParser Path.fromPosixString) "Write JUnit XML results to the given path"
     , commonDescription = Nothing
     , summary = "Run the test suite."
     , example = PP.empty

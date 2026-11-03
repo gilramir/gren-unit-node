@@ -12,6 +12,7 @@ runtime = "node"
 exposed = ["Test.Runner.UnitNode", "Test.Runner.UnitNode.Glob", "Test.Runner.UnitNode.Testing"]
 
 [dependencies]
-"github.com/gilramir/gren-argparse" = "2.0.0 <= v < 3.0.0"
+"github.com/gilramir/gren-argparse" = "3.0.0 <= v < 4.0.0"
+"github.com/gilramir/gren-argparse/node" = "1.0.0 <= v < 2.0.0"
 "github.com/geng-language/node" = "6.1.0 <= v < 7.0.0"
 "github.com/geng-language/test" = "5.0.0 <= v < 6.0.0"
